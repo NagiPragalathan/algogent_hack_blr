@@ -1023,6 +1023,39 @@ function tabBlock(tabs, currentTab) {
  * and nothing else, and the two instructions cannot both be at the end of the
  * message. See SURVEY_FORMAT for why the halves are ordered as they are.
  */
+/**
+ * Where this run has already been, and what it found.
+ *
+ * A run has no memory of its own navigation: each turn carries the CURRENT
+ * observation and nothing about the ones before it, so a page that turned out
+ * to be a dead end looks exactly as promising the second time as the first.
+ * Measured on a research run — the same Google query navigated to three times,
+ * one 404 URL opened four times, roughly two minutes of an eight-minute run
+ * spent arriving somewhere it had already been.
+ *
+ * Capped, and newest last: an unbounded list would grow past the useful part of
+ * the prompt on a long run, and the pages that matter to the next decision are
+ * the recent ones. The verdict is included because "already visited" alone
+ * invites a re-check — "dead link" is what actually closes the door.
+ */
+const MAX_VISITED_SHOWN = 12;
+
+function visitedBlock(visited) {
+  if (!visited?.size) return [];
+
+  const rows = [...visited.entries()].slice(-MAX_VISITED_SHOWN);
+  const dropped = visited.size - rows.length;
+
+  return [
+    'PAGES THIS RUN HAS ALREADY BEEN TO. Do not open one of these again unless',
+    'you have a specific reason the second visit will differ — going back to a',
+    'page you have read is how a run spends its steps without gaining anything.',
+    ...rows.map(([url, verdict]) => `  ${url} — ${verdict}`),
+    ...(dropped ? [`  (and ${dropped} earlier)`] : []),
+    ''
+  ];
+}
+
 export function closing(
   task,
   plan = '',
@@ -1032,13 +1065,16 @@ export function closing(
     mayAsk = true,
     survey = '',
     newTask = false,
-    blind = false
+    blind = false,
+    visited = null,
+    research = false
   } = {}
 ) {
   return [
     '',
     '',
     ...tabBlock(tabs, currentTab),
+    ...visitedBlock(visited),
     /**
      * Said up front, not discovered by being refused.
      *
@@ -1138,6 +1174,39 @@ export function closing(
           'nothing. If a page turns out to be unreadable as text — a canvas, a',
           'video, a scanned PDF — say exactly that and finish, rather than',
           'describing what you think is on it.',
+          ''
+        ]
+      : []),
+    /**
+     * The fast road, named on the turn the model is choosing a road.
+     *
+     * `read_url` is already in the vocabulary and already says "prefer it over
+     * navigate" — and on a research run the model reads that once, at the top
+     * of a very long first message, then spends the rest of the run opening
+     * tabs. Recency is the fix, the same as every other rule here that appears
+     * twice: this is the block that is repeated every turn.
+     *
+     * The batching half is the part that actually buys the time. A batch is ONE
+     * provider round trip, `read_url` ends no batch, and a round trip is ten to
+     * forty seconds against a fetch of about two hundred milliseconds — so five
+     * sources read in one turn instead of five is most of the run.
+     */
+    ...(research
+      ? [
+          'THIS TASK IS READING, NOT CLICKING. The sources are articles you need',
+          'the TEXT of, so use {"action":"read_url","url":"…"} — it fetches the',
+          'page in a fraction of a second, does not move the tab, and does not',
+          'cost a screenshot. Opening the same article in a tab costs a',
+          'navigation, an observation and usually a picture, for the same words.',
+          '',
+          'Read them in ONE turn, not one per turn. Several read_url actions in a',
+          'single batch is one round trip, and a round trip is the expensive part:',
+          '  {"actions":[{"action":"read_url","url":"…"},',
+          '              {"action":"read_url","url":"…"},',
+          '              {"action":"read_url","url":"…"}]}',
+          'Pick the sources off the search results, read them together, and only',
+          'then decide whether anything still needs opening. Do not search again',
+          'for a query you have already run — the results were the same.',
           ''
         ]
       : []),

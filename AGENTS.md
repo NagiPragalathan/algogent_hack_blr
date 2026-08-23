@@ -74,6 +74,7 @@ tests/
   agent/blind-transport.test.mjs  when a run may take the fast path with no camera
   agent/new-tab-window.test.mjs   open_tab must not open into the relay window
   agent/action-json.test.mjs      a markdown answer, from the reply to the HTML
+  agent/dead-ends.test.mjs        a 404 is a dead link, not an unreadable page
   content/frame-guard.test.mjs  only the top frame answers a broadcast
   panel/*.html           self-checking browser fixtures — see the end of this file
 
@@ -1562,6 +1563,52 @@ which time `MAX_AUTO_LOOKS` is usually spent. Measured on the run this came
 from: three captures before, all explained as "the page is identical to before
 that step" — true of the element list, false of the page, and useless to the
 model — against four after, each naming the rejection.
+
+**A 404 is a dead link, and it used to be diagnosed as an unreadable page.**
+This is the single most expensive thing a research run does wrong, and no layer
+could catch it: a 404 loads perfectly well — the navigation succeeds, the DOM is
+there, no step fails — and what it *is* is short and decorative, a headline and
+an apology over a background image. That is exactly the fingerprint
+`unreadableReason` was written for. So the loop photographed it, learned
+nothing, and told the model "an embedded document or frame with no readable
+text", which reads as *try again* rather than *this URL does not exist*.
+
+Measured on "Best AI coding assistants 2026": 25 steps, ~8 minutes.
+`zapier.com/blog/best-ai-coding-assistant/` is a 404, and the run opened it four
+times and spent three screenshots on it (22s, 17s, 16s) out of a whole-run
+budget of six. The identical Google query was navigated to three separate
+times. Meanwhile `read_url` had returned one of the real articles in **0.2s**
+and was then abandoned for tab-opening.
+
+Four things fix it and they are separate. `deadPage` in `loop.js` runs BEFORE
+`visionReason` — the order is the whole of it, since a 404 matches
+`unreadableReason` and whichever runs first decides. It tests wording AND
+length together: "went wrong" and "not found" appear in ordinary prose
+constantly, so the words alone condemn a real page, and a genuine error page is
+short where an article about error pages is not. `photographed` keys on
+`url\nreason` so the same page is never shot twice for the same reason — with
+`rejected >= 2` exempt, because a form fight means the page genuinely CHANGED
+and the second picture carries a new error banner. A skipped capture is not
+silent: `pageWarning` says why in words, or the observation looks identical to
+the one before it, which is the state the model answers by repeating itself.
+And `visited` is a per-run ledger restated by `closing()` every turn, carrying
+the VERDICT rather than just the URL — "already visited" alone invites a
+re-check, "dead link" is what closes the door.
+
+**A reading task is told to read, on the turn it is choosing how.** `read_url`
+was already in the vocabulary and already said "prefer it over navigate" — and
+the model reads that once, at the top of a very long first message, then spends
+the run opening tabs. `RESEARCH_TASK` in `loop.js` puts it in `closing()`
+instead, which is repeated every turn, for the same recency reason as every
+other rule here that appears twice. The batching half is what actually buys the
+time: a batch is ONE provider round trip, `read_url` ends no batch (it sets
+none of `failed`, `opened`, `frameChanged`, and does not move the tab), and a
+round trip is ten to forty seconds against a fetch of about two hundred
+milliseconds. Five sources read in one turn instead of five is most of a
+research run. The trigger is matched against `instructionOf(task)` for the same
+reason `WHOLE_PAGE_TASK` is — a pasted CV supplies "compare" and "research" by
+itself — and it is deliberately narrow: a form-filling run steered onto
+`read_url` would not be slow, it would be wrong.
 
 **A page the DOM cannot describe is photographed, not guessed at.** Text
 extraction fails silently: a chart, a map, a slide, a scanned or embedded PDF

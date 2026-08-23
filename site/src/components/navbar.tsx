@@ -1,14 +1,21 @@
 import { Fragment, useEffect, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Instagram, Linkedin, Twitter } from "lucide-react";
 import { LogoMark } from "@/components/logo-mark";
 import { cn } from "@/lib/utils";
 
+/**
+ * `to` is a full path, not a bare hash: these links have to work from /agents
+ * too, where "#pricing" alone would look for a section that is not on the
+ * page. Routing to "/#pricing" navigates home and ScrollManager takes it the
+ * rest of the way.
+ */
 const LINKS = [
-  { label: "Home", href: "#top" },
-  { label: "Agents", href: "#agents" },
-  { label: "How It Works", href: "#how-it-works" },
-  { label: "Pricing", href: "#pricing" },
+  { label: "Home", to: "/" },
+  { label: "Agents", to: "/agents" },
+  { label: "How It Works", to: "/#how-it-works" },
+  { label: "Pricing", to: "/#pricing" },
 ];
 
 const SOCIALS = [
@@ -26,11 +33,17 @@ const SOCIALS = [
  * logo lands on top of whatever is scrolling past — so the backdrop fades in
  * after the hero rather than being present or absent for the whole page.
  *
+ * Only the home page has that hero. On every other route the backdrop is on
+ * from the first frame, because there the bar starts over ordinary content and
+ * the unfilled state is not a design decision, just an unreadable heading.
+ *
  * The listener is passive: it only ever reads scrollY, and a non-passive
  * scroll handler blocks the compositor on a page built around scroll.
  */
 export function Navbar() {
+  const { pathname } = useLocation();
   const [scrolled, setScrolled] = useState(false);
+  const filled = scrolled || pathname !== "/";
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -46,25 +59,30 @@ export function Navbar() {
       transition={{ duration: 0.6, ease: "easeOut" }}
       className={cn(
         "fixed top-0 left-0 right-0 z-50 px-8 md:px-28 py-4 transition-colors duration-300",
-        scrolled && "bg-background/80 backdrop-blur-md border-b border-border/30",
+        filled && "bg-background/80 backdrop-blur-md border-b border-border/30",
       )}
     >
       <nav className="flex items-center gap-10">
-        <a href="#top" className="flex items-center gap-2.5 shrink-0">
+        <Link to="/" className="flex items-center gap-2.5 shrink-0">
           <LogoMark />
           <span className="font-bold tracking-tight">AgenticWallet</span>
-        </a>
+        </Link>
 
         <div className="hidden md:flex items-center gap-3 text-sm">
           {LINKS.map((link, i) => (
             <Fragment key={link.label}>
               {i > 0 && <span className="text-muted-foreground/40">&bull;</span>}
-              <a
-                href={link.href}
-                className="text-muted-foreground hover:text-foreground transition-colors"
+              <Link
+                to={link.to}
+                className={cn(
+                  "transition-colors hover:text-foreground",
+                  link.to === pathname
+                    ? "text-foreground"
+                    : "text-muted-foreground",
+                )}
               >
                 {link.label}
-              </a>
+              </Link>
             </Fragment>
           ))}
         </div>

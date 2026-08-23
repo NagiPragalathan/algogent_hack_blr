@@ -196,6 +196,27 @@ export async function runAgent({
   let blindProvider = false;
   /** Screenshots spent on a form that keeps refusing what was typed. */
   let errorLooks = 0;
+  /**
+   * Every `url\nreason` a picture has already been spent on.
+   *
+   * A screenshot answers a question about a page ONCE. If the same page still
+   * reads as unreadable after it has been photographed, the second picture is
+   * the same pixels and buys the same nothing — but `visionReason` is stateless
+   * and returns the same reason every step, so it fires again and again.
+   * Measured on a research run: three captures (22s, 17s, 16s) on one 404 page,
+   * all reported as "an embedded document or frame with no readable text", out
+   * of a whole-run budget of six.
+   */
+  const photographed = new Set();
+  /**
+   * Where the run has been, and what it found there.
+   *
+   * Restated every turn by `closing()`. Without it the model has no memory of
+   * its own navigation: the same run searched Google for the identical query
+   * three times and opened one dead URL four times, because nothing above the
+   * current observation said it had already been there.
+   */
+  const visited = new Map();
   /** Observations in a row carrying a validator's complaint. */
   let rejected = 0;
   /** Replies in a row that carried no action. */
@@ -538,7 +559,12 @@ export async function runAgent({
       // Said every turn, not once: a model that plans around taking a screenshot
       // spends a turn discovering it cannot, and the refusal it gets back is a
       // full round trip late.
-      blind: blindProvider
+      blind: blindProvider,
+      // Same reasoning as the plan and the tab list: a fact about the whole run
+      // belongs at the end of every message, where recency puts it in front of
+      // the decision it is meant to change.
+      visited,
+      research: RESEARCH_TASK.test(instructionOf(task))
     });
 
   /**
@@ -1207,6 +1233,16 @@ export async function runAgent({
     // under the picture we took of it.
     const reread = { ...request, deep: false };
     let blind = '';
+    /**
+     * Said instead of a picture, when a picture would have taught nothing.
+     *
+     * A dead link and an already-photographed page both need the model TOLD
+     * something rather than shown it again. It has to be a sentence and not
+     * just a skipped capture: silently declining leaves the observation looking
+     * identical to the one before it, which is the state the model responds to
+     * by trying the same thing.
+     */
+    let pageWarning = '';
 
     /**
      * How many observations in a row have carried a validator's complaint.
@@ -1222,7 +1258,35 @@ export async function runAgent({
     // `blindProvider`: a picture this provider has already refused once is a tab
     // activation, a paint wait and a wasted turn for something that will not
     // arrive. The loop goes on from text, which is what it did before vision.
-    if (next?.ok && !pendingImage && !blindProvider) {
+    /**
+     * A dead link is diagnosed, not photographed.
+     *
+     * This has to come BEFORE `visionReason`, because a 404 matches
+     * `unreadableReason` perfectly — it is short and decorative — and a picture
+     * of it says "an embedded document with no readable text", which reads as
+     * "try again" rather than "this URL does not exist". Recorded in `visited`
+     * so the ledger can keep the model off it for the rest of the run.
+     */
+    if (next?.ok) {
+      const dead = deadPage(next.observation);
+      if (dead) {
+        pageWarning =
+          `${dead}. Do not navigate to it again, do not photograph it, and do ` +
+          `not report its contents — it has none. Go back to the search results ` +
+          `and take a different source.`;
+        visited.set(next.observation.url, 'dead link');
+
+        emit({
+          type: 'AGENT_STEP',
+          step,
+          kind: 'note',
+          description: 'Dead link',
+          note: `${next.observation.url} returned an error page, so it was abandoned.`
+        });
+      }
+    }
+
+    if (next?.ok && !pendingImage && !blindProvider && !pageWarning) {
       const reason = visionReason({
         action: ran,
         outcome,
@@ -1236,7 +1300,28 @@ export async function runAgent({
       // run, when the ordinary allowance is usually gone — and it is the state
       // where a picture is worth most.
       const onErrorBudget = rejected >= 2 && errorLooks < MAX_ERROR_LOOKS;
-      const affordable = reason && (autoLooks < MAX_AUTO_LOOKS || onErrorBudget);
+      /**
+       * The same page, for the same reason, twice.
+       *
+       * A form fight is exempt: `rejected` means the page CHANGED — a new error
+       * banner appeared — so the second picture genuinely carries something the
+       * first one did not. Everything else photographed twice is the same
+       * pixels, and the budget it spends is the budget a later step needs.
+       */
+      const stale =
+        reason &&
+        rejected < 2 &&
+        photographed.has(`${next.observation.url}\n${reason}`);
+
+      const affordable =
+        reason && !stale && (autoLooks < MAX_AUTO_LOOKS || onErrorBudget);
+
+      if (stale) {
+        pageWarning =
+          `${reason}, and a screenshot of this exact page has already been ` +
+          `taken this run — a second one shows the same thing. Read it with ` +
+          `{"action":"read_url","url":"…"} instead, or move on to another source.`;
+      }
       // Named for why, not for what: "Agent is looking" beside a page that has
       // just refused a form is the difference between the user seeing a
       // hiccup and seeing the agent work out what went wrong.
@@ -1251,6 +1336,7 @@ export async function runAgent({
         if (onErrorBudget) errorLooks += 1;
         pendingImage = image;
         blind = reason;
+        photographed.add(`${next.observation.url}\n${reason}`);
 
         emit({
           type: 'AGENT_STEP',
@@ -1338,8 +1424,22 @@ export async function runAgent({
         '\n\n'
       : '';
 
+    /**
+     * Filed AFTER the dead-link check, so a 404 keeps the verdict it was given
+     * rather than being overwritten with "read". Only pages the run actually
+     * landed on are recorded — `read_url` does not move the tab, and its own
+     * result note already carries what it found.
+     */
+    if (next?.ok && next.observation.url && !visited.has(next.observation.url)) {
+      visited.set(
+        next.observation.url,
+        unreadableReason(next.observation) ? 'no readable text' : 'read'
+      );
+    }
+
     message =
       result +
+      (pageWarning ? `WARNING: ${pageWarning}\n\n` : '') +
       (blind
         ? `WARNING: ${blind}, so a screenshot is attached. ` +
           (rejected >= 2
@@ -1482,6 +1582,28 @@ const A_NUMBER =
  * at one end, and a CV mentioning "design" would otherwise put every run that
  * carries one onto the window.
  */
+/**
+ * A task whose work is READING several sources, not acting on one page.
+ *
+ * These are the runs where the loop is at its worst, and the reason is that
+ * every tool it reaches for first is the expensive one. Opening a source in a
+ * tab costs a navigation, a settle, an observation and — because an article is
+ * mostly pictures with a paywall banner — usually a screenshot as well, which
+ * is twenty to fifty seconds each. `read_url` fetches the same text
+ * anonymously in about a fifth of a second and does not move the tab, and
+ * because it ends no batch, five of them are ONE provider round trip.
+ *
+ * Measured on "Best AI coding assistants 2026": 25 steps, roughly eight
+ * minutes, six screenshots, one search repeated three times — for three
+ * articles whose text `read_url` had already returned, once, in 0.2s.
+ *
+ * Matched against `instructionOf(task)` for the same reason `WHOLE_PAGE_TASK`
+ * is: a task is often pasted material with the request at one end of it, and a
+ * CV supplies "compare" and "research" by itself.
+ */
+const RESEARCH_TASK =
+  /\b(?:research|compare|comparison|find out|look up|gather|survey|round[- ]?up|best|top \d+|alternatives?|pros and cons|reviews?|list (?:of|the)|summari[sz]e|what(?:'s| is| are) the)\b/i;
+
 const VISUAL_TASK =
   /\b(?:canvas|draw(?:ing)?|sketch|diagram|chart|graph|plot|infographic|image|images|photo|photos|picture|pictures|screenshot|video|clip|pdf|scan(?:ned)?|slide|slides|deck|map|colou?r|colou?rs|design|layout|thumbnail|crop|figma|whiteboard|look(?:s)? like|visually|on ?screen)\b/i;
 
@@ -1671,6 +1793,45 @@ function unreadableReason(observation) {
   if (visual.image) return 'the page is images with almost no text';
 
   return null;
+}
+
+/**
+ * A dead link, told apart from a page that merely cannot be read.
+ *
+ * This is the single most expensive thing a research run does wrong, and it is
+ * invisible from every layer that could catch it. A 404 loads perfectly well:
+ * the navigation succeeds, the DOM is there, no step fails. What it is is
+ * SHORT and decorative — a headline, an apology and a button on a background
+ * image — which is exactly the fingerprint `unreadableReason` was written for.
+ * So the run photographs it, learns nothing, and the picture says "an embedded
+ * document with no readable text", which reads as "keep trying" rather than
+ * "this URL does not exist".
+ *
+ * Measured on a run for "best AI coding assistants 2026":
+ * zapier.com/blog/best-ai-coding-assistant/ is a 404, and the run opened it
+ * four separate times and spent three screenshots (22s, 17s, 16s) on it, out
+ * of a budget of six for the whole run.
+ *
+ * Both halves of the test are load-bearing. The wording alone matches an
+ * article ABOUT error pages; the length alone matches every splash screen. A
+ * genuine error page is short, and that is what separates them.
+ */
+const DEAD_PAGE =
+  /(?:^|\W)(?:40[034]|410|page not found|not found|no longer (?:exists|available)|cannot be found|does(?:n't| not) exist|went wrong|removed or renamed)(?:\W|$)/i;
+
+/** A real article about HTTP status codes is long. An error page is not. */
+const DEAD_PAGE_CHARS = READABLE_CHARS * 4;
+
+function deadPage(observation) {
+  if (!observation) return null;
+
+  const chars = observation.visual?.chars ?? (observation.text || '').length;
+  if (chars > DEAD_PAGE_CHARS) return null;
+
+  const haystack = `${observation.title || ''}\n${(observation.text || '').slice(0, 600)}`;
+  if (!DEAD_PAGE.test(haystack)) return null;
+
+  return 'that URL is a dead link — what loaded is an error page, not the article';
 }
 
 /**

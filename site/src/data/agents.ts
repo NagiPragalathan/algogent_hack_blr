@@ -8,16 +8,30 @@
  * would keep reading "online" for an agent that had been down for a week.
  */
 
-import iconForm from "@/assets/agent-form.svg";
-import iconLinkedIn from "@/assets/agent-linkedin.svg";
-import iconMail from "@/assets/agent-mail.svg";
-import iconSearch from "@/assets/agent-search.svg";
+import type { Pricing } from "@/lib/pricing";
+
+// Re-exported so a consumer of the catalogue does not need to know the
+// arithmetic lives elsewhere — it lives elsewhere only so Node can test it.
+export { quote, SAMPLE_CALL, type Pricing } from "@/lib/pricing";
 
 export type AgentId =
   | "form-filler"
   | "linkedin-apply"
   | "mail-automation"
   | "web-search";
+
+/**
+ * What the agent works on. Purely a directory affordance: it groups the
+ * listing and drives the filter on /agents, and nothing in a call reads it.
+ */
+export const CATEGORIES = [
+  "Browser",
+  "Career",
+  "Communication",
+  "Research",
+] as const;
+
+export type AgentCategory = (typeof CATEGORIES)[number];
 
 export interface SchemaField {
   name: string;
@@ -33,23 +47,13 @@ export interface FailureMode {
   when: string;
 }
 
-export interface Pricing {
-  /**
-   * Flat component covering work that costs money but consumes no tokens — a
-   * Playwright session, an outbound API call, a page fetch.
-   */
-  baseUsd: number;
-  /** Metered component, applied to tokens the request actually consumed. */
-  perMillionInputUsd: number;
-  perMillionOutputUsd: number;
-}
-
 export interface Agent {
   id: AgentId;
   name: string;
   /** Accent word rendered in serif italic in the card heading. */
   accent: string;
-  icon: string;
+  /** Groups the agent in the directory filter. */
+  category: AgentCategory;
   tagline: string;
   description: string;
   /** Runtime the agent actually executes on — shown so buyers can judge risk. */
@@ -68,7 +72,7 @@ export const AGENTS: Agent[] = [
     id: "form-filler",
     name: "Form Filler",
     accent: "Filler",
-    icon: iconForm,
+    category: "Browser",
     tagline: "Fills any web form from a structured profile.",
     description:
       "Opens the target URL in a real browser, reads the form from the DOM rather than a stored template, maps your profile onto the fields it finds, and hands back a screenshot of the filled state before anything is submitted.",
@@ -104,7 +108,7 @@ export const AGENTS: Agent[] = [
     id: "linkedin-apply",
     name: "LinkedIn Apply",
     accent: "Apply",
-    icon: iconLinkedIn,
+    category: "Career",
     tagline: "Matches your resume against openings and applies.",
     description:
       "Searches roles against your criteria, scores each opening against your parsed resume, and walks the Easy Apply flow. Screening questions it cannot answer from your resume are handed back for you to answer — it will not invent one.",
@@ -139,7 +143,7 @@ export const AGENTS: Agent[] = [
     id: "mail-automation",
     name: "Mail Automation",
     accent: "Automation",
-    icon: iconMail,
+    category: "Communication",
     tagline: "Sends, drafts and follows up from your own mailbox.",
     description:
       "Talks to the Gmail or Microsoft Graph API with tokens you grant over OAuth — no SMTP credential handling, no password anywhere. Composes, sends, replies in thread and schedules follow-ups, and surfaces bounces rather than swallowing them.",
@@ -174,7 +178,7 @@ export const AGENTS: Agent[] = [
     id: "web-search",
     name: "Web Search",
     accent: "Search",
-    icon: iconSearch,
+    category: "Research",
     tagline: "Real results with the page content attached.",
     description:
       "Queries a licensed search API, then fetches and extracts the readable body of each result. Dead links, paywalls and empty result sets come back marked as exactly that — the result count is whatever was really there.",
@@ -207,22 +211,3 @@ export const AGENTS: Agent[] = [
   },
 ];
 
-/**
- * What a request costs, given the tokens it actually consumed. The marketplace
- * quotes this alongside the result so the on-chain receipt and the work behind
- * it can be reconciled line by line.
- */
-export function quote(
-  pricing: Pricing,
-  inputTokens: number,
-  outputTokens: number,
-): number {
-  return (
-    pricing.baseUsd +
-    (inputTokens / 1_000_000) * pricing.perMillionInputUsd +
-    (outputTokens / 1_000_000) * pricing.perMillionOutputUsd
-  );
-}
-
-/** A representative call, used to show a worked price on each listing. */
-export const SAMPLE_CALL = { inputTokens: 2_400, outputTokens: 800 } as const;

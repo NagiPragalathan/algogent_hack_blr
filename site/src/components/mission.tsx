@@ -94,7 +94,7 @@ export function Mission() {
   return (
     <section className="pt-0 pb-32 md:pb-44 px-8 md:px-28">
       <video
-        className="w-full max-w-[800px] mx-auto aspect-square object-cover monochrome-media"
+        className="w-full max-w-[800px] mx-auto aspect-square object-cover cinematic-media"
         src={MISSION_VIDEO}
         width={800}
         height={800}

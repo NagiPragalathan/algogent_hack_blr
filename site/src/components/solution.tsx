@@ -47,7 +47,7 @@ export function Solution() {
 
       <motion.div {...fadeUp(0.16)} className="mt-16 max-w-6xl mx-auto">
         <video
-          className="w-full rounded-2xl aspect-[3/1] object-cover monochrome-media"
+          className="w-full rounded-2xl aspect-[3/1] object-cover cinematic-media"
           src={SOLUTION_VIDEO}
           autoPlay
           loop

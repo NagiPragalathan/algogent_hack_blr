@@ -74,7 +74,7 @@ export function CTA() {
     <section className="relative py-32 md:py-44 px-8 md:px-28 border-t border-border/30 overflow-hidden">
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover z-0 monochrome-media"
+        className="absolute inset-0 w-full h-full object-cover z-0 cinematic-media"
         muted
         loop
         playsInline

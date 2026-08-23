@@ -52,7 +52,7 @@ export function Hero() {
   return (
     <section id="top" className="relative min-h-screen flex items-center overflow-hidden">
       <video
-        className="absolute inset-0 w-full h-full object-cover monochrome-media"
+        className="absolute inset-0 w-full h-full object-cover cinematic-media"
         src={HERO_VIDEO}
         autoPlay
         loop

@@ -4,7 +4,8 @@ import animate from "tailwindcss-animate";
 /**
  * Every colour is a CSS variable holding bare HSL channels, so a token can be
  * alpha-modified inline (`border-border/30`) without a second variable per
- * opacity. The palette is deliberately monochrome — see src/index.css.
+ * opacity. The chrome is greyscale and colour is reserved for meaning — the
+ * status trio below, and the per-agent hues in src/data/agent-theme.ts.
  */
 export default {
   darkMode: ["class"],
@@ -38,6 +39,11 @@ export default {
         accent: {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
+        },
+        status: {
+          live: "hsl(var(--status-live))",
+          wait: "hsl(var(--status-wait))",
+          down: "hsl(var(--status-down))",
         },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
