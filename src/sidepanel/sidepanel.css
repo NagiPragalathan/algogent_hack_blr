@@ -34,6 +34,9 @@
 @import url('styles/code.css');
 @import url('styles/greeting.css');
 @import url('styles/running.css');
+/* After thread.css: the receipt block is appended inside the thread and
+   inherits its spacing. */
+@import url('styles/receipts.css');
 @import url('styles/context-bar.css');
 
 @import url('styles/agent.css');

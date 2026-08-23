@@ -22,8 +22,8 @@ import { cn } from "@/lib/utils";
 function Rings({ stroke }: { stroke: string }) {
   return (
     <>
-      <circle cx="100" cy="100" r="86" stroke={stroke} strokeOpacity="0.22" />
-      <circle cx="100" cy="100" r="64" stroke={stroke} strokeOpacity="0.12" />
+      <circle cx="100" cy="100" r="86" stroke={stroke} strokeOpacity="0.3" />
+      <circle cx="100" cy="100" r="64" stroke={stroke} strokeOpacity="0.18" />
     </>
   );
 }

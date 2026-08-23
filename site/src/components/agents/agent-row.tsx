@@ -17,8 +17,9 @@ const usd = (n: number) => `$${n.toFixed(4)}`;
  * terms that produce it rather than as a single figure, which is the same
  * claim the pricing section makes — a charge you can reconcile.
  *
- * `scroll-mt-28` is not decoration. The navbar is fixed, so an anchored jump
- * from /agents#web-search would otherwise land with the heading underneath it.
+ * `scroll-mt-32` is not decoration. The pill navbar floats over the page, so
+ * an anchored jump from /agents#web-search would otherwise land with the
+ * heading underneath it.
  */
 export function AgentRow({
   agent,
@@ -31,7 +32,8 @@ export function AgentRow({
 }) {
   const { inputTokens, outputTokens } = SAMPLE_CALL;
   const inputCost = (inputTokens / 1_000_000) * agent.pricing.perMillionInputUsd;
-  const outputCost = (outputTokens / 1_000_000) * agent.pricing.perMillionOutputUsd;
+  const outputCost =
+    (outputTokens / 1_000_000) * agent.pricing.perMillionOutputUsd;
   const total = quote(agent.pricing, inputTokens, outputTokens);
 
   return (
@@ -40,9 +42,13 @@ export function AgentRow({
       initial={{ opacity: 0, y: 24 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-80px" }}
-      transition={{ duration: 0.6, delay: Math.min(index, 3) * 0.06, ease: "easeOut" }}
+      transition={{
+        duration: 0.6,
+        delay: Math.min(index, 3) * 0.06,
+        ease: "easeOut",
+      }}
       style={tintVars(agent.id)}
-      className="liquid-glass tint-card rounded-3xl p-6 md:p-10 scroll-mt-28"
+      className="tint-card bg-paper border border-sand rounded-3xl p-6 md:p-10 scroll-mt-32"
     >
       <div className="grid lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] gap-10">
         <div>
@@ -54,51 +60,51 @@ export function AgentRow({
             <HealthBadge health={health} />
           </div>
 
-          <p className="mt-5 text-[10px] tracking-[2px] uppercase text-[hsl(var(--tint)/0.9)]">
+          <p className="mt-5 text-[10px] tracking-[2px] uppercase text-[hsl(var(--tint))] font-semibold">
             {agent.category}
           </p>
 
-          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.5px]">
+          <h2 className="mt-2 text-ink text-3xl font-normal tracking-tight">
             {agent.name.replace(agent.accent, "").trim()}{" "}
-            <span className="font-serif italic font-normal text-[1.7rem]">
+            <em className="not-italic accent-serif text-[2rem]">
               {agent.accent}
-            </span>
+            </em>
           </h2>
 
-          <p className="mt-3 text-muted-foreground leading-relaxed">
-            {agent.tagline}
-          </p>
+          <p className="mt-3 text-ink/70 leading-relaxed">{agent.tagline}</p>
 
           <div className="mt-6">
             <SectionLabel>Runtime</SectionLabel>
-            <p className="text-sm text-secondary-foreground">{agent.runtime}</p>
+            <p className="text-sm text-ink/75">{agent.runtime}</p>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-[hsl(var(--tint)/0.2)] bg-[hsl(var(--tint)/0.05)] p-4">
+          <div className="mt-6 rounded-2xl border border-[hsl(var(--tint)/0.25)] bg-[hsl(var(--tint)/0.06)] p-4">
             <SectionLabel>
               Typical call · {inputTokens.toLocaleString()} in ·{" "}
               {outputTokens.toLocaleString()} out
             </SectionLabel>
             <dl className="space-y-1.5 text-xs">
               <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground">Base</dt>
-                <dd className="tabular-nums">{usd(agent.pricing.baseUsd)}</dd>
+                <dt className="text-ink/55">Base</dt>
+                <dd className="tabular-nums text-ink">
+                  {usd(agent.pricing.baseUsd)}
+                </dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground">
+                <dt className="text-ink/55">
                   Input · ${agent.pricing.perMillionInputUsd.toFixed(2)}/Mtok
                 </dt>
-                <dd className="tabular-nums">{usd(inputCost)}</dd>
+                <dd className="tabular-nums text-ink">{usd(inputCost)}</dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground">
+                <dt className="text-ink/55">
                   Output · ${agent.pricing.perMillionOutputUsd.toFixed(2)}/Mtok
                 </dt>
-                <dd className="tabular-nums">{usd(outputCost)}</dd>
+                <dd className="tabular-nums text-ink">{usd(outputCost)}</dd>
               </div>
-              <div className="flex justify-between gap-3 pt-2 mt-1 border-t border-[hsl(var(--tint)/0.2)]">
-                <dt className="font-medium">Total</dt>
-                <dd className="tabular-nums font-medium text-[hsl(var(--tint))]">
+              <div className="flex justify-between gap-3 pt-2 mt-1 border-t border-[hsl(var(--tint)/0.25)]">
+                <dt className="font-semibold text-ink">Total</dt>
+                <dd className="tabular-nums font-semibold text-[hsl(var(--tint))]">
                   {usd(total)}
                 </dd>
               </div>

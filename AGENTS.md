@@ -76,6 +76,7 @@ tests/
   agent/action-json.test.mjs      a markdown answer, from the reply to the HTML
   agent/dead-ends.test.mjs        a 404 is a dead link, not an unreadable page
   content/frame-guard.test.mjs  only the top frame answers a broadcast
+  panel/receipts.html      the fee block, and a hostile tool label as TEXT
   panel/*.html           self-checking browser fixtures — see the end of this file
 
 src/content/             classic content scripts (NOT ES modules — see below)
@@ -106,6 +107,25 @@ src/sidepanel/           the panel UI
     slash.js             the '/' skill typeahead, sibling of mentions.js
   lib/                   icons, markdown, highlight, preset-skills — no knowledge
                          of this panel
+  payments/              paying a skill's author, per use
+    x402.js              quote, sign, settle — and every reason not to charge
+    ledger.js            the local mirror of settled receipts, per conversation
+```
+
+The marketplace half lives in `site/` (a separate Vite app, deployed to
+algogent.vercel.app) and is where anything that decides money lives:
+
+```
+site/
+  db/schema.sql          developers, agents, receipts. Money is BIGINT microALGO
+  db/apply.mjs           the only way the schema is applied
+  api/_lib/split.js      the 80/20 arithmetic. Integer only, remainder to the dev
+  api/_lib/algorand.js   builds the atomic group, re-checks it, submits it
+  api/agents/register    a developer publishes an agent and a payout address
+  api/x402/quote         the 402 challenge + the unsigned group
+  api/x402/settle        verify → submit → confirm → THEN write the receipt
+  api/receipts/          the fee history the panel prints
+  src/lib/registry.ts    the typed client. UI-free
 ```
 
 ## Keep it this way
@@ -1563,6 +1583,64 @@ which time `MAX_AUTO_LOOKS` is usually spent. Measured on the run this came
 from: three captures before, all explained as "the page is identical to before
 that step" — true of the element list, false of the page, and useless to the
 model — against four after, each naming the rejection.
+
+**A skill is an agent, and using one pays the person who wrote it — but a
+payment may never block an answer.** That second half is the whole design.
+Signing means a wallet popup and a chain round trip, so `chargeForSkill` is
+started after the turn exists and is NEVER awaited: the question is already on
+its way, and a panel that cannot answer until a payment clears has traded its
+only product for a feature. Every failure path therefore ends in the question
+being asked anyway, and each returns a REASON rather than throwing — a skill
+nobody registered is free, an unreachable marketplace is free, a wallet on the
+wrong network is free, a declined signature is free. A missing registry entry
+must never mean "charge something".
+
+**The client never decides the split, because it would have every reason to
+lie.** The percentage and the company address are read server-side per request
+and are not inputs to anything the extension sends. The panel receives an
+unsigned transaction group and signs it; `assertMatches` in `api/_lib/algorand.js`
+re-decodes the SIGNED bytes and checks sender, receiver and amount against a
+quote the server re-derives from the database. Skipping that check would not
+show up in testing: a client can sign any transaction it likes, and without it
+the server would submit one paying the client's own address, watch it confirm,
+and write a receipt saying the developer was paid.
+
+It is also why the extension builds no transactions. It has no bundler and no
+dependencies, so it cannot carry algosdk, and hand-rolling msgpack, base32 and
+SHA-512/256 in a panel script to move real money is not a trade worth making.
+
+**Two payments, one atomic group.** Algorand groups either land entirely or not
+at all, so there is no state where the developer has been paid and the company
+has not. That makes a receipt describe one event. A zero company share produces
+a ONE-transaction group rather than a two-transaction group with a zero leg —
+the chain would accept the zero payment and charge a second 1000 microALGO fee
+to move nothing.
+
+**Money is integer microALGO everywhere — the wire, the database, the panel.**
+Never a float and never NUMERIC. ALGO has exactly six decimals, microALGO is the
+atomic unit, and `0.1 + 0.2` is not `0.3`. The integer split has to give the odd
+microALGO to someone and it goes to the DEVELOPER: rounding the company's cut up
+takes from the person who did the work, and dropping it leaves a microALGO
+unaccounted for, which makes the receipt fail to reconcile — and a receipt that
+does not add up is the one thing this whole path exists to prevent. There is a
+price floor (0.02 ALGO) because below it the network fee is a larger share of
+the transfer than the developer's cut.
+
+**A receipt is written only after the chain confirms.** No pending row that
+later turns real. A row in `receipts` means the money moved and
+`confirmed_round` is the proof anyone can check without asking us — which is
+also why every leg in the panel links to a public explorer. A receipt you can
+only verify by trusting its issuer is not a receipt.
+
+**The fee block is built with the DOM, never `innerHTML`.** A tool label comes
+from a developer's registration and an address comes off the wire; both are
+content we do not control, and this is the one surface in the panel where
+getting that wrong puts attacker-supplied markup next to a wallet address.
+`tests/panel/receipts.html` drives a hostile label through it in a real browser
+for exactly that reason — a fake DOM cannot reproduce the bug, because the bug
+is the parser doing what it is told. The block also renders NOTHING when nothing
+was charged: an empty "fees: none" under every answer trains people to stop
+reading the place the real numbers appear.
 
 **A 404 is a dead link, and it used to be diagnosed as an unreadable page.**
 This is the single most expensive thing a research run does wrong, and no layer

@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[11px] tracking-[2px] uppercase text-muted-foreground mb-3">
+    <p className="text-[11px] tracking-[2px] uppercase text-ink/50 mb-3">
       {children}
     </p>
   );
@@ -25,15 +25,16 @@ function SchemaList({ title, rows }: { title: string; rows: Agent["input"] }) {
       <ul className="space-y-2">
         {rows.map((f) => (
           <li key={f.name} className="text-sm leading-relaxed">
-            <span className="text-foreground font-medium">{f.name}</span>
-            <span className="text-muted-foreground"> · {f.type}</span>
+            <span className="text-ink font-medium">{f.name}</span>
+            <span className="text-ink/55"> · {f.type}</span>
             {f.required && (
-              <span className="text-[hsl(var(--tint)/0.85)]"> · required</span>
+              <span className="text-[hsl(var(--tint))] font-medium">
+                {" "}
+                · required
+              </span>
             )}
             {f.note && (
-              <span className="block text-muted-foreground/70 text-xs">
-                {f.note}
-              </span>
+              <span className="block text-ink/50 text-xs">{f.note}</span>
             )}
           </li>
         ))}
@@ -49,12 +50,10 @@ function FailureList({ rows }: { rows: Agent["failures"] }) {
       <ul className="space-y-2">
         {rows.map((f) => (
           <li key={f.code} className="text-sm">
-            <code className="text-status-down/90 text-xs bg-status-down/10 border border-status-down/20 rounded px-1.5 py-0.5">
+            <code className="text-status-down text-xs bg-status-down/[0.08] border border-status-down/25 rounded px-1.5 py-0.5">
               {f.code}
             </code>
-            <span className="block text-muted-foreground/70 text-xs mt-1">
-              {f.when}
-            </span>
+            <span className="block text-ink/50 text-xs mt-1">{f.when}</span>
           </li>
         ))}
       </ul>
@@ -69,7 +68,7 @@ export function CapabilityChips({ items }: { items: string[] }) {
       {items.map((c) => (
         <li
           key={c}
-          className="text-xs text-secondary-foreground rounded-full px-3 py-1 border border-[hsl(var(--tint)/0.25)] bg-[hsl(var(--tint)/0.07)]"
+          className="text-xs text-ink/75 rounded-full px-3 py-1 border border-[hsl(var(--tint)/0.3)] bg-[hsl(var(--tint)/0.08)]"
         >
           {c}
         </li>
@@ -90,16 +89,16 @@ export function AgentContract({
 }) {
   return (
     <div className={cn("space-y-6", className)}>
-      <p className="text-sm text-muted-foreground leading-relaxed">
-        {agent.description}
-      </p>
+      <p className="text-sm text-ink/70 leading-relaxed">{agent.description}</p>
 
       <div>
         <SectionLabel>What it does</SectionLabel>
         <CapabilityChips items={agent.capabilities} />
       </div>
 
-      <div className={cn("gap-6", columns === 2 ? "grid sm:grid-cols-2" : "space-y-6")}>
+      <div
+        className={cn("gap-6", columns === 2 ? "grid sm:grid-cols-2" : "space-y-6")}
+      >
         <SchemaList title="Input" rows={agent.input} />
         <SchemaList title="Output" rows={agent.output} />
       </div>
@@ -108,7 +107,7 @@ export function AgentContract({
 
       <div>
         <SectionLabel>You supply</SectionLabel>
-        <p className="text-sm text-muted-foreground">{agent.credentials}</p>
+        <p className="text-sm text-ink/70">{agent.credentials}</p>
       </div>
     </div>
   );

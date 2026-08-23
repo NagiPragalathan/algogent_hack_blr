@@ -4,6 +4,7 @@ import { Footer } from "@/components/footer";
 import { ScrollManager } from "@/components/scroll-manager";
 import { Home } from "@/pages/home";
 import { AgentsPage } from "@/pages/agents";
+import { PublishPage } from "@/pages/publish";
 
 /**
  * The shell: chrome that is on every route, and the routes themselves.
@@ -12,7 +13,7 @@ import { AgentsPage } from "@/pages/agents";
  * body and nothing else — remounting the bar would replay its entrance
  * animation on every navigation.
  *
- * The catch-all redirects rather than rendering a 404 page: there are two
+ * The catch-all redirects rather than rendering a 404 page: there are three
  * routes, and anything else is a mistyped or stale URL for which the home page
  * is a more useful landing than an apology.
  */
@@ -25,6 +26,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/agents" element={<AgentsPage />} />
+          <Route path="/publish" element={<PublishPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

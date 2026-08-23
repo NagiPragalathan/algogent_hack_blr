@@ -11,7 +11,7 @@ import type { HealthState } from "@/hooks/use-agent-health";
 import { cn } from "@/lib/utils";
 
 /**
- * One agent in a grid.
+ * One agent in a grid, on the cream ground.
  *
  * The contract stays collapsed behind a disclosure rather than being cut to a
  * summary, because a truncated schema is the one thing a buyer cannot act on —
@@ -29,7 +29,11 @@ export function AgentCard({
   delay: number;
 }) {
   const [open, setOpen] = useState(false);
-  const price = quote(agent.pricing, SAMPLE_CALL.inputTokens, SAMPLE_CALL.outputTokens);
+  const price = quote(
+    agent.pricing,
+    SAMPLE_CALL.inputTokens,
+    SAMPLE_CALL.outputTokens,
+  );
 
   return (
     <motion.article
@@ -38,7 +42,7 @@ export function AgentCard({
       viewport={{ once: true, margin: "-100px" }}
       transition={{ duration: 0.6, delay, ease: "easeOut" }}
       style={tintVars(agent.id)}
-      className="liquid-glass tint-card rounded-2xl p-6 flex flex-col"
+      className="tint-card bg-paper border border-sand rounded-3xl p-6 flex flex-col"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="relative -ml-1">
@@ -50,33 +54,29 @@ export function AgentCard({
         <HealthBadge health={health} />
       </div>
 
-      <p className="mt-4 text-[10px] tracking-[2px] uppercase text-[hsl(var(--tint)/0.9)]">
+      <p className="mt-4 text-[10px] tracking-[2px] uppercase text-[hsl(var(--tint))] font-semibold">
         {agent.category}
       </p>
 
-      <h3 className="mt-2 font-semibold text-base">
+      <h3 className="mt-2 text-ink font-semibold text-lg">
         {agent.name.replace(agent.accent, "").trim()}{" "}
-        <span className="font-serif italic font-normal text-lg">
-          {agent.accent}
-        </span>
+        <em className="not-italic accent-serif text-xl">{agent.accent}</em>
       </h3>
-      <p className="mt-2 text-muted-foreground text-sm leading-relaxed">
-        {agent.tagline}
-      </p>
+      <p className="mt-2 text-ink/65 text-sm leading-relaxed">{agent.tagline}</p>
 
       {/* mt-auto rather than a fixed margin: the taglines run to different
           line counts, and without it the price row sits at a different height
           in every card of the row. */}
-      <dl className="mt-auto pt-5 border-t border-border/40 space-y-2 text-xs">
+      <dl className="mt-auto pt-5 border-t border-sand space-y-2 text-xs">
         <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">Typical call</dt>
-          <dd className="font-medium tabular-nums text-[hsl(var(--tint))]">
+          <dt className="text-ink/55">Typical call</dt>
+          <dd className="font-semibold tabular-nums text-[hsl(var(--tint))]">
             ${price.toFixed(4)}
           </dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">Runtime</dt>
-          <dd className="text-secondary-foreground text-right">{agent.runtime}</dd>
+          <dt className="text-ink/55">Runtime</dt>
+          <dd className="text-ink/75 text-right">{agent.runtime}</dd>
         </div>
       </dl>
 
@@ -85,17 +85,20 @@ export function AgentCard({
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1.5 text-xs text-ink/60 hover:text-ink transition-colors"
         >
           {open ? "Hide contract" : "View contract"}
           <ChevronDown
-            className={cn("w-3.5 h-3.5 transition-transform", open && "rotate-180")}
+            className={cn(
+              "w-3.5 h-3.5 transition-transform",
+              open && "rotate-180",
+            )}
           />
         </button>
 
         <Link
           to={`/agents#${agent.id}`}
-          className="flex items-center gap-1 text-xs text-[hsl(var(--tint)/0.9)] hover:text-[hsl(var(--tint))] transition-colors"
+          className="flex items-center gap-1 text-xs font-medium text-[hsl(var(--tint))] hover:opacity-70 transition-opacity"
         >
           Full spec
           <ArrowUpRight className="w-3.5 h-3.5" />

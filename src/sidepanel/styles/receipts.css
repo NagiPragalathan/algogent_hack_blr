@@ -1,0 +1,138 @@
+/**
+ * The fee history under a finished answer.
+ *
+ * Quiet by default and readable when looked at. It sits at the end of a
+ * conversation rather than under each message, because what a person checks is
+ * "what did this session cost", not "what did that sentence cost" — and a block
+ * per turn would put more chrome in the thread than answer.
+ *
+ * Amounts are tabular-nums throughout: a column of ALGO figures that does not
+ * line up is unreadable at a glance, which defeats the point of showing it.
+ */
+
+.receipts {
+  margin: 18px 0 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.02));
+  font-size: 12px;
+}
+
+.receipts-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.receipts-title {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.receipts-total {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.receipt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.receipt {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.receipt:last-child {
+  border-bottom: 0;
+}
+
+.receipt-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.receipt-tool {
+  font-weight: 600;
+  color: var(--text);
+  /* A developer chooses this label, so it can be long. It must not push the
+     amount off the right edge of a 400px panel. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.receipt-total {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.receipt-legs {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.receipt-leg {
+  display: grid;
+  /* Label, address, amount, link — the amount column is fixed so the two legs
+     of one payment line up under each other and visibly add to the total. */
+  grid-template-columns: minmax(72px, auto) 1fr auto auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--text-dim);
+}
+
+.receipt-leg-label {
+  white-space: nowrap;
+}
+
+.receipt-address {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.receipt-leg-amount {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.receipt-txid {
+  color: var(--text-dim);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+}
+
+.receipt-txid:hover {
+  color: var(--text);
+}
+
+.receipt-fee {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.receipts-foot {
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--text-dim);
+}

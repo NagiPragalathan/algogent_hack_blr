@@ -7,6 +7,7 @@ import { emit, EVENTS } from '../core/bus.js';
 import { agentMessage } from './agent.js';
 import { greeting } from './greeting.js';
 import { pinnedToBottom, stickToBottom, syncScrollState } from './scroll.js';
+import { renderReceipts } from './receipts.js';
 
 /**
  * Which messages have already been on screen, so a repaint does not re-animate.
@@ -69,6 +70,17 @@ export function renderThread() {
       );
     }
   }
+
+  /**
+   * The fee history goes last, and it is deliberately not awaited.
+   *
+   * It reads from storage, and `renderThread` is called on a provider switch
+   * and on reopening a session — making the whole repaint wait on a storage
+   * round trip would put a blank thread on screen for a block that is often
+   * empty. It appends itself when it resolves, and `renderReceipts` removes any
+   * earlier copy first, so a repaint that lands mid-flight cannot stack two.
+   */
+  void renderReceipts(els.thread, state.session?.id);
 
   stickToBottom();
 }

@@ -8,16 +8,18 @@
  * so TypeScript refuses), and a palette change never touches a line of the
  * contract.
  *
- * Colours are read on a pure black ground, so every one of them is a light
- * mid-tone rather than a saturated primary: a #0000FF on #000 is unreadable at
- * a 2px stroke, and the glyphs are all 2-3px strokes.
+ * Every hue is a mid-tone, because each one has to read twice: as a stroke on
+ * the cream listing (#F6E4CF) and as a stroke on the ink cards. A pastel
+ * disappears on cream and a deep saturated primary disappears on ink, so the
+ * set sits in the band that survives both — and they are all warm-adjacent so
+ * they belong to the cream ground rather than fighting it.
  */
 import type { AgentId } from "@/data/agents";
 
 export interface AgentTint {
-  /** Stroke gradient start — the brighter of the pair. */
+  /** Gradient start — the deeper of the pair, and the flat colour when one is needed. */
   from: string;
-  /** Stroke gradient end. */
+  /** Gradient end. */
   to: string;
   /**
    * The same hue as bare HSL channels, so a consumer can alpha-modify it for
@@ -28,10 +30,10 @@ export interface AgentTint {
 }
 
 export const AGENT_TINT: Record<AgentId, AgentTint> = {
-  "form-filler": { from: "#A78BFA", to: "#6D8BFF", hsl: "255 92% 76%" },
-  "linkedin-apply": { from: "#5EB8FF", to: "#7FE7FF", hsl: "205 100% 68%" },
-  "mail-automation": { from: "#4ADEA8", to: "#A5F3D0", hsl: "159 68% 58%" },
-  "web-search": { from: "#FFC46B", to: "#FFE7B0", hsl: "36 100% 71%" },
+  "form-filler": { from: "#C2562F", to: "#D0693A", hsl: "17 61% 47%" },
+  "linkedin-apply": { from: "#4A5B8C", to: "#6A80B8", hsl: "226 31% 42%" },
+  "mail-automation": { from: "#5F7A3C", to: "#7C9A4C", hsl: "85 34% 36%" },
+  "web-search": { from: "#B8801F", to: "#CC9A33", hsl: "38 71% 42%" },
 };
 
 /**

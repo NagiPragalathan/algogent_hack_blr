@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fee receipts — self-checking fixture</title>
+    <link rel="stylesheet" href="/src/sidepanel/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/sidepanel/styles/base.css" />
+    <link rel="stylesheet" href="/src/sidepanel/styles/receipts.css" />
+    <style>
+      body { padding: 16px; max-width: 420px; margin: 0 auto; }
+      #report { position: fixed; top: 8px; right: 8px; font: 12px/1.5 monospace;
+                background: #111; color: #eee; padding: 10px 12px; border-radius: 8px;
+                max-width: 340px; max-height: 90vh; overflow: auto; z-index: 99; }
+      .p { color: #6f6; } .f { color: #f66; }
+    </style>
+  </head>
+  <body>
+    <!--
+      The fee history is the one surface in the panel that renders text nobody
+      here controls — a tool label comes from a developer's registration, an
+      address comes off the wire — next to a wallet address. So this fixture
+      checks two different things and the second matters more than the first:
+
+        1. the block renders, the amounts are right, and the total agrees with
+           the rows above it;
+        2. a hostile tool label lands as TEXT and not as markup.
+
+      A fake DOM cannot answer the second, because the bug it guards against is
+      the browser's own parser doing what it is told.
+
+      Serve the repo over http and open this page. The box in the corner
+      reports pass/fail.
+    -->
+    <div id="report">running…</div>
+    <div id="thread"></div>
+
+    <script type="module">
+      const report = document.getElementById('report');
+      const lines = [];
+      let pass = 0;
+      let fail = 0;
+      const ok = (name, cond, extra = '') => {
+        if (cond) { pass++; lines.push(`<div class="p">ok   ${name}</div>`); }
+        else { fail++; lines.push(`<div class="f">FAIL ${name}${extra ? ' — ' + extra : ''}</div>`); }
+        report.innerHTML = lines.join('') + `<hr>${pass}/${pass + fail} passed`;
+      };
+
+      // The ledger reads chrome.storage.local; this is the whole of what it needs.
+      const store = {};
+      globalThis.chrome = {
+        storage: {
+          local: {
+            get: async (k) => (typeof k === 'string' ? { [k]: store[k] } : { ...store }),
+            set: async (o) => Object.assign(store, o)
+          }
+        }
+      };
+
+      const SESSION = 's-fixture';
+
+      // A label a developer could really register, chosen to be hostile.
+      const NASTY = '<img src=x onerror="window.__pwned=1">Summarise';
+
+      store['x402_receipts_v1'] = {
+        [SESSION]: [
+          {
+            receiptId: 1,
+            agentId: 'p-summary',
+            toolLabel: NASTY,
+            network: 'testnet',
+            confirmedRound: 12345,
+            total: { microAlgo: 1_000_000, algo: '1.000000' },
+            developer: {
+              address: 'ZBWK3Y3NNNQNXQTIXHN5NSW23N74N2CKIBIDR2CPDUENFQQFSRZJOGCZQQ',
+              microAlgo: 800_000, algo: '0.800000', txid: 'DEV1',
+              explorer: 'https://lora.algokit.io/testnet/transaction/DEV1'
+            },
+            company: {
+              address: 'SICA3J2Z7BGVYIR6XWVPDV7VTZKLY2GR4A7RZWIAQAN7CTN4S4SQRDCSLU',
+              microAlgo: 200_000, algo: '0.200000', bps: 2000, txid: 'CO1',
+              explorer: 'https://lora.algokit.io/testnet/transaction/CO1'
+            },
+            networkFee: { microAlgo: 2_000, algo: '0.002000' }
+          },
+          {
+            receiptId: 2,
+            agentId: 'p-table',
+            toolLabel: 'Extract as a table',
+            network: 'testnet',
+            confirmedRound: 12350,
+            // An odd price: 20% of 33,333 is 6,666.6, and the odd microALGO has
+            // to land on the developer or the two rows will not add to the total.
+            total: { microAlgo: 33_333, algo: '0.033333' },
+            developer: {
+              address: 'ZBWK3Y3NNNQNXQTIXHN5NSW23N74N2CKIBIDR2CPDUENFQQFSRZJOGCZQQ',
+              microAlgo: 26_667, algo: '0.026667', txid: 'DEV2',
+              explorer: 'https://lora.algokit.io/testnet/transaction/DEV2'
+            },
+            company: {
+              address: 'SICA3J2Z7BGVYIR6XWVPDV7VTZKLY2GR4A7RZWIAQAN7CTN4S4SQRDCSLU',
+              microAlgo: 6_666, algo: '0.006666', bps: 2000, txid: 'CO2',
+              explorer: 'https://lora.algokit.io/testnet/transaction/CO2'
+            },
+            networkFee: { microAlgo: 2_000, algo: '0.002000' }
+          }
+        ]
+      };
+
+      const { renderReceipts } = await import('/src/sidepanel/ui/receipts.js');
+      const { totalsOf, receiptsFor, toAlgo } = await import('/src/sidepanel/payments/ledger.js');
+
+      const thread = document.getElementById('thread');
+      await renderReceipts(thread, SESSION);
+
+      const block = thread.querySelector('.receipts');
+      ok('the block renders', Boolean(block));
+
+      const rows = thread.querySelectorAll('.receipt');
+      ok('one row per payment', rows.length === 2, `got ${rows.length}`);
+
+      // The reason this fixture exists at all.
+      ok('a hostile tool label did NOT execute', !globalThis.__pwned);
+      ok('no injected element reached the DOM', !thread.querySelector('img'));
+      ok(
+        'and it is shown as literal text',
+        thread.querySelector('.receipt-tool')?.textContent === NASTY
+      );
+
+      const legs = rows[1].querySelectorAll('.receipt-leg-amount');
+      ok('the odd split renders 0.026667 to the developer', legs[0]?.textContent.includes('0.026667'));
+      ok('and 0.006666 to the marketplace', legs[1]?.textContent.includes('0.006666'));
+
+      // The assertion the whole block lives or dies on.
+      const stored = await receiptsFor(SESSION);
+      const totals = totalsOf(stored);
+      ok(
+        'the two shares add back to the two totals',
+        totals.developerMicroAlgo + totals.companyMicroAlgo === totals.totalMicroAlgo,
+        `${totals.developerMicroAlgo} + ${totals.companyMicroAlgo} != ${totals.totalMicroAlgo}`
+      );
+      ok(
+        'the header total is price plus network fees',
+        thread.querySelector('.receipts-total')?.textContent.includes(toAlgo(totals.spentMicroAlgo)),
+        thread.querySelector('.receipts-total')?.textContent
+      );
+
+      ok('every leg links to a public explorer', thread.querySelectorAll('.receipt-txid').length === 4);
+      ok(
+        'the full address is available on hover',
+        thread.querySelector('.receipt-address')?.title.length === 58
+      );
+
+      // renderThread runs on every provider switch and every streamed delta.
+      await renderReceipts(thread, SESSION);
+      await renderReceipts(thread, SESSION);
+      ok('repainting does not stack copies', thread.querySelectorAll('.receipts').length === 1);
+
+      // A chat where nothing was charged must show nothing at all.
+      await renderReceipts(thread, 's-empty');
+      ok('an unpaid conversation renders no block', !thread.querySelector('.receipts'));
+
+      report.innerHTML = lines.join('') + `<hr>${pass}/${pass + fail} passed`;
+      globalThis.__result = { pass, fail };
+    </script>
+  </body>
+</html>

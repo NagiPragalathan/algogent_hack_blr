@@ -4,19 +4,23 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * Monochrome only. `default` is the inverted pill used for the primary action
- * on a black page; `glass` defers to the .liquid-glass class in index.css and
- * therefore declares no background of its own.
+ * Four grounds, because the page has four: near-white on footage, ink on
+ * cream, sand beside it, and a glass fill for the dark sections where a solid
+ * button would punch a hole in the video behind it.
  */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "bg-foreground text-background hover:bg-foreground/90",
-        outline: "border border-border text-foreground hover:bg-secondary",
-        ghost: "text-muted-foreground hover:text-foreground",
-        glass: "liquid-glass text-foreground hover:bg-foreground/[0.04]",
+        paper: "bg-paper text-ink hover:bg-paper/90 focus-visible:ring-paper",
+        ink: "bg-ink text-paper hover:bg-ink-strong focus-visible:ring-ink",
+        sand: "bg-sand text-ink hover:bg-sand-strong focus-visible:ring-ink",
+        glass:
+          "bg-black/25 backdrop-blur-md text-paper hover:bg-black/40 focus-visible:ring-paper",
+        outline:
+          "border border-ink/25 text-ink hover:bg-ink/5 focus-visible:ring-ink",
+        ghost: "text-paper/70 hover:text-paper",
       },
       size: {
         default: "h-11 px-6",
@@ -26,10 +30,10 @@ const buttonVariants = cva(
       },
       shape: {
         pill: "rounded-full",
-        box: "rounded-lg",
+        box: "rounded-xl",
       },
     },
-    defaultVariants: { variant: "default", size: "default", shape: "box" },
+    defaultVariants: { variant: "paper", size: "default", shape: "box" },
   },
 );
 

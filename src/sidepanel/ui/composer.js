@@ -16,6 +16,7 @@ import { renderThread } from './thread.js';
 import { clearAttachments } from './attachments.js';
 import { closeSkillFiles } from './skill-files.js';
 import { expandTokens, paintInk } from './composer-ink.js';
+import { chargeForSkill } from '../payments/x402.js';
 
 /**
  * The composer: sizing the input, and turning what is in it into a question.
@@ -169,6 +170,18 @@ export function ask(question) {
   }
 
   state.turns.push(turn);
+
+  /**
+   * A skill is an agent someone wrote and published, so using one pays them.
+   *
+   * Deliberately not awaited and deliberately after the turn exists: the
+   * question is already going out, and a wallet popup in front of it would mean
+   * a panel that cannot answer until a payment clears. A skill nobody has
+   * registered is free, an unreachable marketplace is free, and a declined
+   * signature is free — see the reasons in payments/x402.js. None of them can
+   * stop the question.
+   */
+  if (skill) chargeForSkill(skill, state.session?.id ?? null);
   // Recorded against the conversation it was asked from, before anything is
   // sent. Every reply that comes back carries this id, which is how it finds
   // its way home even if you have moved to another tab in the meantime.

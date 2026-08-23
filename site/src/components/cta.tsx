@@ -1,123 +1,114 @@
-import { useEffect, useRef } from "react";
-import { motion } from "framer-motion";
+import { useState, type FormEvent } from "react";
+import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
-import { LogoMark } from "@/components/logo-mark";
-import { fadeUp, pressable } from "@/lib/motion";
+import { MEDIA } from "@/data/media";
+import { useHls } from "@/hooks/use-hls";
 
-const HLS_SRC =
-  "https://stream.mux.com/8wrHPCX2dC3msyYU9ObwqNdm00u3ViXvOSHUMRYSEe5Q.m3u8";
+/** Where an access request is posted. Unset in a static preview build. */
+const WAITLIST = import.meta.env.VITE_WAITLIST_URL as string | undefined;
+
+type SubmitState = "idle" | "sending" | "sent" | "failed";
 
 /**
- * Safari plays HLS natively and hls.js explicitly reports itself unsupported
- * there, so the native path is not a fallback for a failure — it is the
- * correct road on that browser. Checking `isSupported()` first keeps the
- * Media Source path off Safari, where attaching it fights the native player.
+ * The closing section, and the one place the access form lives.
  *
- * The instance must be destroyed on unmount: an orphaned Hls keeps pulling
- * segments for the life of the page, which on a landing page means a
- * background download that never stops.
- *
- * hls.js is ~400kB and this section is the last on the page, so it is imported
- * dynamically — the hero must not wait on a player for footage nobody has
- * scrolled to. `cancelled` is what makes that safe: the import settles after
- * an await, by which point the component may already be gone, and attaching to
- * a detached video is a leak the destroy() below would never run for.
+ * The form used to sit in the hero, where it competed with the heading for the
+ * one screen the footage is for. Down here it is the last thing on the page
+ * and the thing every call to action above it points at — which is why the
+ * section carries `id="access"`.
  */
-function useHlsBackground(src: string) {
-  const ref = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    const video = ref.current;
-    if (!video) return;
-
-    let cancelled = false;
-    let teardown: (() => void) | undefined;
-
-    void (async () => {
-      const { default: Hls } = await import("hls.js");
-      if (cancelled || !video.isConnected) return;
-
-      if (Hls.isSupported()) {
-        const hls = new Hls({ enableWorker: true });
-        hls.loadSource(src);
-        hls.attachMedia(video);
-        // Autoplay can still be refused (a data-saver profile, a policy); the
-        // overlay and the copy above it do not depend on the video playing.
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          void video.play().catch(() => {});
-        });
-        teardown = () => hls.destroy();
-        return;
-      }
-
-      if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = src;
-        const onLoad = () => void video.play().catch(() => {});
-        video.addEventListener("loadedmetadata", onLoad);
-        teardown = () => video.removeEventListener("loadedmetadata", onLoad);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      teardown?.();
-    };
-  }, [src]);
-
-  return ref;
-}
-
 export function CTA() {
-  const videoRef = useHlsBackground(HLS_SRC);
+  const videoRef = useHls(MEDIA.stream);
+  const [email, setEmail] = useState("");
+  const [state, setState] = useState<SubmitState>("idle");
+
+  /**
+   * With no waitlist endpoint configured this hands off to the visitor's own
+   * mail client rather than reporting a success nothing performed — a form
+   * that says "you are on the list" while posting nowhere is the one piece of
+   * a landing page that must not lie.
+   */
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!email) return;
+
+    if (!WAITLIST) {
+      window.location.href = `mailto:access@agenticwallet.dev?subject=Marketplace%20access&body=${encodeURIComponent(email)}`;
+      return;
+    }
+
+    setState("sending");
+    try {
+      const res = await fetch(WAITLIST, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      setState(res.ok ? "sent" : "failed");
+    } catch {
+      setState("failed");
+    }
+  }
 
   return (
-    <section className="relative py-32 md:py-44 px-8 md:px-28 border-t border-border/30 overflow-hidden">
+    <section
+      id="access"
+      className="relative py-28 md:py-40 px-6 overflow-hidden bg-ink-strong scroll-mt-24"
+    >
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover z-0 cinematic-media"
+        className="absolute inset-0 w-full h-full object-cover cinematic-media"
         muted
         loop
         playsInline
         aria-hidden="true"
       />
-      <div className="absolute inset-0 bg-background/45 z-[1]" />
+      <div className="absolute inset-0 bg-black/50" />
 
-      <div className="relative z-10 max-w-3xl mx-auto text-center">
-        <motion.div {...fadeUp(0)} className="flex justify-center">
-          <LogoMark outer="w-10 h-10" inner="w-5 h-5" />
-        </motion.div>
+      <div className="relative z-10 max-w-2xl mx-auto text-center">
+        <BrandMark className="w-10 h-10 text-white/80 mx-auto" />
 
-        <motion.h2
-          {...fadeUp(0.08)}
-          className="text-4xl md:text-6xl font-medium tracking-[-1.5px] mt-8 leading-[1.1]"
-        >
-          Start Your{" "}
-          <span className="font-serif italic font-normal">Journey</span>
-        </motion.h2>
+        <h2 className="text-white text-4xl md:text-6xl font-normal tracking-tight leading-[1.1] mt-8">
+          Start where the work{" "}
+          <em className="not-italic accent-serif">actually happens</em>
+        </h2>
 
-        <motion.p
-          {...fadeUp(0.16)}
-          className="text-muted-foreground text-lg mt-6 max-w-xl mx-auto"
-        >
+        <p className="text-white/70 text-base md:text-lg mt-6 max-w-lg mx-auto font-medium">
           Call an agent from the extension, or publish one of your own and get
           paid per request on the same rails.
-        </motion.p>
+        </p>
 
-        <motion.div
-          {...fadeUp(0.24)}
-          className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-10"
+        <form
+          onSubmit={onSubmit}
+          className="mt-10 mx-auto max-w-md bg-black/25 backdrop-blur-md rounded-xl flex items-center pl-5 pr-1 py-1"
         >
-          <motion.div {...pressable}>
-            <Button shape="box" className="px-8 py-3.5 h-auto">
-              Start calling agents
-            </Button>
-          </motion.div>
-          <motion.div {...pressable}>
-            <Button variant="glass" shape="box" className="px-8 py-3.5 h-auto">
-              Publish an agent
-            </Button>
-          </motion.div>
-        </motion.div>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@company.com"
+            aria-label="Email address"
+            className="flex-1 min-w-0 bg-transparent text-white text-sm placeholder:text-white/50 focus:outline-none py-2.5"
+          />
+          <Button
+            type="submit"
+            variant="paper"
+            shape="box"
+            disabled={state === "sending"}
+            className="shrink-0 h-auto px-5 py-2.5"
+          >
+            {state === "sending" ? "Sending" : "Get access"}
+          </Button>
+        </form>
+
+        {state !== "idle" && state !== "sending" && (
+          <p className="mt-4 text-sm text-white/70">
+            {state === "sent"
+              ? "Request received. We will be in touch."
+              : "That did not go through. Try again, or mail access@agenticwallet.dev."}
+          </p>
+        )}
       </div>
     </section>
   );

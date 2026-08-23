@@ -2,9 +2,14 @@ import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Search, X } from "lucide-react";
 import { AgentRow } from "@/components/agents/agent-row";
-import { Input } from "@/components/ui/input";
 import { useAgentHealth } from "@/hooks/use-agent-health";
-import { AGENTS, quote, SAMPLE_CALL, type Agent, type AgentCategory } from "@/data/agents";
+import {
+  AGENTS,
+  quote,
+  SAMPLE_CALL,
+  type Agent,
+  type AgentCategory,
+} from "@/data/agents";
 import { fadeUp } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -66,10 +71,10 @@ function Chip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "rounded-full px-4 py-2 text-xs tracking-wide transition-colors border",
+        "rounded-full px-3.5 py-2 text-xs font-medium tracking-wide whitespace-nowrap transition-colors border",
         active
-          ? "bg-foreground text-background border-foreground"
-          : "border-border text-muted-foreground hover:text-foreground hover:border-ring",
+          ? "bg-ink text-paper border-ink"
+          : "border-sand text-ink/60 hover:text-ink hover:border-sand-strong",
       )}
     >
       {children}
@@ -114,31 +119,31 @@ export function AgentsDirectory() {
     <>
       <motion.div
         {...fadeUp(0)}
-        className="flex flex-col lg:flex-row lg:items-center gap-5 lg:gap-8"
+        className="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-6"
       >
-        <div className="liquid-glass rounded-full flex items-center gap-3 px-5 h-12 lg:w-80 shrink-0">
-          <Search className="w-4 h-4 text-muted-foreground shrink-0" />
-          <Input
+        <div className="bg-paper border border-sand rounded-full flex items-center gap-3 px-5 h-12 lg:w-64 shrink-0">
+          <Search className="w-4 h-4 text-ink/45 shrink-0" />
+          <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search agents, fields, failure codes"
+            placeholder="Search agents, fields, codes"
             aria-label="Search agents"
-            className="flex-1 min-w-0 px-0"
+            className="flex-1 min-w-0 bg-transparent text-sm text-ink placeholder:text-ink/40 focus:outline-none"
           />
           {query && (
             <button
               type="button"
               onClick={() => setQuery("")}
               aria-label="Clear search"
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-ink/45 hover:text-ink transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 lg:flex-1">
           <Chip active={category === "all"} onClick={() => setCategory("all")}>
             All
           </Chip>
@@ -149,8 +154,8 @@ export function AgentsDirectory() {
           ))}
         </div>
 
-        <div className="flex items-center gap-2 lg:ml-auto">
-          <span className="text-xs tracking-[2px] uppercase text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
+          <span className="text-[11px] tracking-[2px] uppercase text-ink/45">
             Sort
           </span>
           {SORTS.map((s) => (
@@ -161,14 +166,16 @@ export function AgentsDirectory() {
         </div>
       </motion.div>
 
-      <p className="mt-6 text-sm text-muted-foreground" aria-live="polite">
+      <p className="mt-6 text-sm text-ink/55" aria-live="polite">
         Showing {results.length} of {AGENTS.length} agents
       </p>
 
       {results.length === 0 ? (
-        <div className="liquid-glass rounded-3xl mt-8 p-12 text-center">
-          <p className="text-lg">Nothing in the catalogue matches that.</p>
-          <p className="text-muted-foreground text-sm mt-2">
+        <div className="bg-paper border border-sand rounded-3xl mt-8 p-12 text-center">
+          <p className="text-ink text-lg">
+            Nothing in the catalogue matches that.
+          </p>
+          <p className="text-ink/60 text-sm mt-2">
             The listing is not padded with agents that do not exist — try a
             broader term, or clear the filters.
           </p>

@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Secrets. DATABASE_URL and the company payout address live here.
+.env
+.env.local
+.env*.local
+!.env.example

@@ -25,6 +25,7 @@ import { handlePortMessage } from './app/messages.js';
 import { bindEvents } from './app/events.js';
 import { watchTheme } from './ui/theme.js';
 import { initWallet } from './ui/wallet.js';
+import { initPayments, loadListing } from './payments/x402.js';
 
 /** How long to wait for the worker before saying it is not there. */
 const WORKER_TIMEOUT_MS = 4000;
@@ -39,6 +40,17 @@ async function boot() {
   await restoreThread();
   await loadSkills();
   await initWallet();
+  await initPayments();
+
+  /**
+   * Which skills are payable, fetched once and never awaited.
+   *
+   * Awaiting it would put a network round trip in front of the first paint for
+   * information nothing on screen needs yet — the answer is only wanted at the
+   * moment a skill is used. A listing that never arrives means every skill is
+   * free, which is the safe direction and the one this whole layer defaults to.
+   */
+  void loadListing(state.skills.map((skill) => skill.id));
 
   bindEvents();
   renderThread();
