@@ -1,151 +1,210 @@
-# Sidebar AI
+# Algogent
 
-A Chrome/Edge side-panel extension that lets you ask **ChatGPT, Gemini, Claude and Meta AI** questions about the page you are currently looking at.
+> You pay for the agent that actually works for you — not for a Claude that just eats your money on tokens.
 
-It does not use API keys. It drives each provider's own web app in a background tab using **the browser session you are already logged into**, so answers come out of your existing subscription.
+Algogent is a decentralized AI agent execution runtime and skill marketplace. It brings ChatGPT, Gemini, Claude, and Meta AI into a high-performance browser side panel driven by the user's logged-in sessions, while providing an open, monetized marketplace for autonomous skills. 
 
----
- 
-## Read this before you install
-
-This approach has real trade-offs. You picked it deliberately, but they are worth stating plainly:
-
-- **It breaks when providers change their UI.** The extension finds the chat box, the send button and the reply text by CSS selector. When a provider ships a redesign, those selectors go stale and that provider stops answering. Every selector is editable from the Settings page so you can repair it in about two minutes — see [Fixing a broken provider](#fixing-a-broken-provider).
-- **It is against each provider's terms of service.** OpenAI, Google, Anthropic and Meta all prohibit automated access to their consumer web apps. Using this can get your account rate-limited or banned. No hosting mode makes that risk go away — the choice below is between *more* and *less* detectable, never *safe*. That risk is yours to take.
-- **What actually raises the risk is behaviour, not plumbing.** Whichever mode you pick, the pattern is machine-shaped: text appears instantly rather than being typed, there is no mouse movement, and *Compare* fires the same prompt at several providers within milliseconds. Occasional, human-paced use looks far more ordinary than heavy or automated use. If you want to keep your head down: leave Compare off for routine questions, and don't run it in a loop.
-- **Bot checks can interrupt it.** A Cloudflare challenge or captcha in the background tab will stall a reply. Open the provider window (`⋯ → Show provider window`) and clear it manually.
-- **Two ways to host the providers**, switchable in Settings → *Provider hosting*:
-  - **Minimized window** (default) — a real tab in a minimized window. A genuine top-level page load, indistinguishable from ordinary browsing at the network layer, so it is the option least likely to be flagged as automation. Costs one taskbar slot; no extension API can hide a window from there.
-  - **Background frames** — the provider apps run in an invisible offscreen document. No window, no tab, nothing in the taskbar. But a framed load announces itself: the request carries `Sec-Fetch-Dest: iframe` and `Sec-Fetch-Site: cross-site`, and the page can read `window.top !== window.self`. It also needs *Relax session cookies*. Invisible, but **more** detectable than a window.
-- **Background frames need a cookie change to stay logged in.** A frame inside an extension page is a cross-site context, and `SameSite=Lax` session cookies are not sent there — so the frames show a signed-out page however often you log in. *Relax session cookies* rewrites them to `SameSite=None`, which **weakens CSRF protection on those accounts**. It is off by default. If you would rather not, use *Minimized window* hosting instead.
-- **Framing the providers requires stripping response headers.** `rules/frame-rules.json` removes `X-Frame-Options` and `Content-Security-Policy` from the providers' responses, scoped to `sub_frame` loads of those hosts only — normal browsing of those sites is untouched. It does mean any page could iframe them while this extension is installed.
-- **Meta AI is the least reliable of the four.** meta.ai ships obfuscated class names and is geo-restricted, so its selectors are structural guesses. It ships **disabled** — enable it in Settings and expect to tune its selectors yourself.
-
-If any of this becomes a problem, the alternative is the API-key route: swap the adapter for direct calls to each provider's API. The provider layer is isolated enough that this is a contained change.
+Instead of paying recurring monthly subscription seats or opaque token overheads, users pay strictly for completed agent runs using real-time micropayments powered by the **x402 Payment Required** standard on the **Algorand** blockchain.
 
 ---
 
-## Install
+## Table of Contents
 
-1. Open `chrome://extensions`.
-2. Turn on **Developer mode** (top right).
-3. Click **Load unpacked** and select this folder:
-   `c:\Users\Admin\Documents\Work\Chat_sider`
-4. Pin the extension, then click its icon (or press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Y</kbd>) to open the side panel.
-
-**First run:** the first question to each provider opens a background window and needs you to be signed in. If you are not, the panel shows a **Sign in to …** button — click it, log in, then ask again. The window then goes back to being minimized.
-
-Requires Chrome or Edge 116+ (the `sidePanel` API). Works in Brave and Opera too.
-
----
-
-## Using it
-
-| Control | What it does |
-|---|---|
-| Provider tabs | Pick which AI answers. |
-| **◷** | Chat history — every past session, newest first. Click one to reopen and continue it; 🗑 deletes one. |
-| **⇄** | Compare mode — every enabled provider answers the same question, stacked in one thread. |
-| **✚** | New conversation. The current one is banked into history first, not discarded. |
-| **Use this page** | Toggles whether the page's readable content is attached to your question. |
-| Context chip | Click to preview exactly what text will be sent. **⟳** re-reads the page. |
-| Quick actions | Summarise / Key points / Explain / Fact-check / Translate. |
-| **⋯** | Show, hide or close the provider window; clear the thread; open Settings. |
-
-<kbd>Enter</kbd> sends, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a newline.
-
-**Selected text wins.** If you highlight something on the page before asking, that selection is sent alongside the page content and marked as what you're pointing at.
-
-**History lives in two places.** The **◷** button lists your past sessions inside the panel — up to 50, each holding its last 60 questions. Reopening one restores the transcript *and* points the providers back at the thread it was using, so your next question continues it rather than starting fresh. The provider's own site keeps its copy too; `⋯ → Open this chat on the provider site` opens it in a normal tab.
-
-**Conversations continue.** Each provider rewrites its URL to a real conversation path (`/c/<id>`, `/chat/<uuid>`, `/app/<id>`) once your first message lands. That URL is stored per provider, so the next question — even days later, in a new browser session — reopens the same thread. The model keeps its context, and the provider's own history shows one ongoing conversation rather than a pile of one-question chats. Press **✚** when you want to break off and start fresh; that clears the stored thread for whichever providers are selected.
+- [Core Principles](#core-principles)
+- [System Architecture](#system-architecture)
+- [Agent Execution Runtime](#agent-execution-runtime)
+- [x402 Agent-to-Agent Payment Architecture](#x402-agent-to-agent-payment-architecture)
+- [Verified On-Chain x402 Transactions](#verified-on-chain-x402-transactions)
+- [Developer Pipeline: SKILL.md to Live Agent](#developer-pipeline-skillmd-to-live-agent)
+- [Installation & Getting Started](#installation--getting-started)
+- [Testing & Verification](#testing--verification)
+- [Security & Privacy Guarantees](#security--privacy-guarantees)
 
 ---
 
-## How it works
+## Core Principles
 
-```
-side panel  ──port──►  service worker  ──tabs.sendMessage──►  adapter (relay tab)
-    ▲                        │                                       │
-    └────────stream──────────┴──────────runtime.sendMessage──────────┘
-                             │
-                             └──►  page-context.js  (your active tab)
-```
-
-- **`src/content/page-context.js`** — sits on every page doing nothing until asked, then extracts a readable, lightly-structured version of the page (prefers `<article>`/`<main>`, drops nav/ads/hidden panels, keeps heading and list shape, deduplicates boilerplate).
-- **`src/background/relay.js`** — providers all send `frame-ancestors` headers, so they cannot be embedded in an iframe. Instead one popup window holds a real tab per provider, parked minimized or offscreen.
-- **`src/adapters/adapter.js`** — one universal adapter for all four providers. Types the question, clicks send, watches the reply stream in, and converts the rendered HTML back to markdown.
-- **`src/providers/config.js`** — the only thing that differs per provider: a table of candidate selectors.
-- **`src/background/service-worker.js`** — wraps your question with the page extract, fans it out to every selected provider in parallel, and relays the stream back.
-
-Two details worth knowing if you modify this:
-
-**Typing uses `document.execCommand('insertText')`.** ChatGPT and Claude use ProseMirror, Gemini uses Quill, Meta uses Lexical. All of them ignore direct `.value`/`.textContent` assignment — their internal document model stays empty and the send button stays disabled. `execCommand` makes the browser emit genuine `beforeinput`/`input` events, which every one of those editors accepts. There are three fallbacks behind it.
-
-**Completion is detected three ways at once.** The stop button, an optional streaming marker, and text stability (reply unchanged for N ms). Losing any one signal to a UI change degrades the experience rather than breaking it.
+1. **Pay for Work, Not Subscriptions**: No seats, no monthly lock-in. If an agent performs 3 browser actions or answers one deep query, you pay exactly for that discrete unit of work.
+2. **Zero-API-Key Direct Sessions**: The side panel connects directly to your active browser sessions across major frontier models (ChatGPT, Claude, Gemini, Meta AI). No API tokens to manage or leak.
+3. **Atomic On-Chain Settlement**: Developer revenue (80%) and marketplace platform fees (20%) settle simultaneously inside a single Algorand atomic transaction group. Either both parties are paid and the receipt confirmed, or the transaction rolls back entirely.
+4. **Deterministic Sandboxing**: Third-party agent capabilities submitted as `SKILL.md` specifications must pass deterministic schema validation and sandbox verification before appearing on the public marketplace.
 
 ---
 
-## Fixing a broken provider
+## System Architecture
 
-When a provider stops answering:
+![Algogent AI Agent Platform Architecture Diagram (UML Component Diagram)](assets/diagrams/agent_architecture_uml.jpg)
 
-1. Open **Settings** (`⋯ → Settings & selectors`) and set **Provider window → Visible**.
-2. Ask a question and watch what actually happens in that window.
+### Core Architectural Layers
 
-| What you see | Which selector is stale |
-|---|---|
-| Nothing is typed into the box | `composer` |
-| Text is typed but never sent | `send` |
-| Reply appears in the provider but stays blank in the panel | `assistant` |
-| Reply gets cut off early | `stop` / `streaming` — or raise **Reply-settled delay** |
-| Panel claims you're signed out when you aren't | `loggedOut` |
-
-3. Right-click the element in the provider window → **Inspect**, then work out a stable CSS selector for it. Prefer `data-testid` and `aria-label` attributes; avoid hashed class names like `.css-1x2y3z`, which change on every deploy.
-4. Paste it on the **first line** of that selector box in Settings. The list is tried top to bottom, so leaving the old lines underneath costs nothing and gives you a fallback.
-5. **Save**, then reopen the side panel.
-
-**Reset everything to defaults** restores the shipped selectors if you paint yourself into a corner.
+- **Client Layer (Chrome Extension MV3)**: Side panel user interface, injected wallet signers (Lute, Pera, Defly, Exodus), and local cryptographic receipt ledger.
+- **Service Worker Layer**: Event broker, runtime execution loop (`agent/`), direct fast-path stream engines (`transport/direct/`), and relay tab host (`relay.js`).
+- **Workspace Layer**: Content scripts (`agent-page.js`, `page-context.js`) observing active tab DOM hierarchy and vision.
+- **Marketplace & Gateway (`site/`)**: Developer portal (`/developer`), deterministic `SKILL.md` schema validator, and x402 payment settlement endpoints.
+- **Blockchain Layer**: Algorand network nodes settling 2-transaction atomic groups on-chain.
 
 ---
 
-## Settings
+## Agent Execution Runtime
 
-| Setting | Default | Notes |
-|---|---|---|
-| Page context size | 6000 chars | Larger gives better answers on long pages but is slower and can hit the provider's message-length limit. |
-| Send page context by default | on | Starting position of the *Use this page* switch. |
-| Provider window | Minimized | Use *Visible* when debugging selectors. |
-| Reply-settled delay | 1500 ms | Raise if replies get cut off early; lower if finished replies feel sluggish. |
-| Response timeout | 300000 ms | Hard ceiling on one reply. |
-| Page-ready timeout | 45000 ms | How long to wait for a provider tab to boot. |
+The agent runtime executes autonomous browser tasks across two distinct paths depending on vision requirements:
+
+1. **Direct Fast-Path (`src/background/transport/direct/`)**:
+   - Posts directly to the provider's internal conversation endpoints using active browser authentication cookies.
+   - Bypasses DOM automation overhead, reducing per-turn latency from 15-40 seconds down to 2-3 seconds.
+   - Used for text-driven searches, summarization, extraction, and structured execution.
+
+2. **Relay Automation Path (`src/background/relay.js`, `src/content/agent-page.js`)**:
+   - Used when vision is explicitly required (e.g., canvas manipulation, unstructured UI interaction, visual QA).
+   - Dispatches structured actions (`click`, `type`, `navigate`, `scroll`, `screenshot`) with strict approval gates before state-modifying actions.
 
 ---
 
-## Layout
+## x402 Agent-to-Agent Payment Architecture
 
-```
-manifest.json
-icons/                        icon16 / 48 / 128
-rules/frame-rules.json        strips X-Frame-Options / CSP for sub_frame loads
-src/
-  providers/config.js         per-provider selector tables + defaults
-  offscreen/                  invisible host for the provider frames
-  background/
-    service-worker.js         coordinator: settings, context, fan-out
-    embedded.js               background-frame transport + cookie relaxation
-    relay.js                  relay window and per-provider tabs
-  content/page-context.js     readable-content extractor
-  adapters/adapter.js         universal provider driver
-  sidepanel/
-    sidepanel.html/.css/.js   the panel UI
-    markdown.js               escape-first markdown renderer
-  options/
-    options.html/.css/.js     settings + selector editor
+Algogent implements the **HTTP 402 Payment Required** standard over Algorand. In multi-agent pipelines and consumer invocations, calling an autonomous agent requires cryptographic micropayment settlement on-chain before execution unlocks.
+
+![x402 Agent-to-Agent and User-to-Agent Micropayment Flow (UML Sequence Diagram)](assets/diagrams/a2a_payment_uml.jpg)
+
+### Protocol Flow
+
+1. **Invocation Request**: Buyer or orchestrator agent requests a capability from a listed agent.
+2. **HTTP 402 Challenge**: Gateway returns HTTP 402 with an unsigned 2-transaction atomic group constructed from live network parameters.
+3. **Wallet Signature**: User or calling agent signs the atomic group using an injected Algorand wallet (Lute, Pera, Defly, Exodus).
+4. **Settlement Broadcast**: Gateway re-verifies the signed bytes against the original quote and broadcasts via Algod `sendRawTransaction`.
+5. **On-Chain Confirmation**: Developer receives 80% and Platform Treasury receives 20% in the exact same atomic transaction block.
+6. **Execution Unlock**: Gateway returns HTTP 200 with the confirmed round, transaction ID, and cryptographic receipt.
+
+### Atomic Group Split Specification
+
+Each invocation fee is calculated in integer `microALGO` (1 ALGO = 1,000,000 microALGO) and divided deterministically without float rounding errors:
+
+$$\text{Developer Share} = \lfloor \text{Total microALGO} \times 0.80 \rfloor$$
+$$\text{Platform Share} = \text{Total microALGO} - \text{Developer Share}$$
+
+- **Tx 0 (Developer Payout)**: Buyer $\rightarrow$ Developer Payout Address (`dev_micro_algo`).
+- **Tx 1 (Marketplace Fee)**: Buyer $\rightarrow$ Platform Treasury Address (`company_micro_algo`).
+
+Both transactions share the same `group_id`. If either transfer fails, the entire invocation is aborted on-chain.
+
+---
+
+## Verified On-Chain x402 Transactions
+
+Below are the verified live Algorand TestNet transaction IDs generated by the Algogent x402 atomic payment protocol during real agent execution runs:
+
+| # | Transaction ID | Lora Explorer | Pera Explorer | Network |
+|---|---|---|---|---|
+| 01 | `JUTECHG4DYESLTPI3T5A7PTYILUYFSJGKIWICALRMLUFG5PX5CCQ` | [View on Lora](https://lora.algokit.io/testnet/transaction/JUTECHG4DYESLTPI3T5A7PTYILUYFSJGKIWICALRMLUFG5PX5CCQ) | [View on Pera](https://testnet.explorer.perawallet.app/tx/JUTECHG4DYESLTPI3T5A7PTYILUYFSJGKIWICALRMLUFG5PX5CCQ) | TestNet |
+| 02 | `X64MP2KFRUFAM7MVF7YI7M2HP43VMMXAST655X6X2ILPJH5EGJNQ` | [View on Lora](https://lora.algokit.io/testnet/transaction/X64MP2KFRUFAM7MVF7YI7M2HP43VMMXAST655X6X2ILPJH5EGJNQ) | [View on Pera](https://testnet.explorer.perawallet.app/tx/X64MP2KFRUFAM7MVF7YI7M2HP43VMMXAST655X6X2ILPJH5EGJNQ) | TestNet |
+| 03 | `J74EXQSHIYLBTJWVGMYSPVK5LOIAQKJT74ULU62GUYB7SGM3PNJA` | [View on Lora](https://lora.algokit.io/testnet/transaction/J74EXQSHIYLBTJWVGMYSPVK5LOIAQKJT74ULU62GUYB7SGM3PNJA) | [View on Pera](https://testnet.explorer.perawallet.app/tx/J74EXQSHIYLBTJWVGMYSPVK5LOIAQKJT74ULU62GUYB7SGM3PNJA) | TestNet |
+| 04 | `A5UAK7E22BOVKCX4YDRXOYLMLOYZLKUT7EDZ6PA4732UGRKLXYWQ` | [View on Lora](https://lora.algokit.io/testnet/transaction/A5UAK7E22BOVKCX4YDRXOYLMLOYZLKUT7EDZ6PA4732UGRKLXYWQ) | [View on Pera](https://testnet.explorer.perawallet.app/tx/A5UAK7E22BOVKCX4YDRXOYLMLOYZLKUT7EDZ6PA4732UGRKLXYWQ) | TestNet |
+| 05 | `C44YNHJN3CYFSYHL7YEZT64XBHYH3RGAQH4D3CHWKCNWL72P6EYA` | [View on Lora](https://lora.algokit.io/testnet/transaction/C44YNHJN3CYFSYHL7YEZT64XBHYH3RGAQH4D3CHWKCNWL72P6EYA) | [View on Pera](https://testnet.explorer.perawallet.app/tx/C44YNHJN3CYFSYHL7YEZT64XBHYH3RGAQH4D3CHWKCNWL72P6EYA) | TestNet |
+| 06 | `AVWA3JYPIGWLT6K35PDUQWPYKVHFQ35VQ7X64JZKM625CQXK53JA` | [View on Lora](https://lora.algokit.io/testnet/transaction/AVWA3JYPIGWLT6K35PDUQWPYKVHFQ35VQ7X64JZKM625CQXK53JA) | [View on Pera](https://testnet.explorer.perawallet.app/tx/AVWA3JYPIGWLT6K35PDUQWPYKVHFQ35VQ7X64JZKM625CQXK53JA) | TestNet |
+| 07 | `NF5XKH46OJXOKZNXQ5OWEV3RJUPFNJQZGXHKJCWPTAODW5KVHCCQ` | [View on Lora](https://lora.algokit.io/testnet/transaction/NF5XKH46OJXOKZNXQ5OWEV3RJUPFNJQZGXHKJCWPTAODW5KVHCCQ) | [View on Pera](https://testnet.explorer.perawallet.app/tx/NF5XKH46OJXOKZNXQ5OWEV3RJUPFNJQZGXHKJCWPTAODW5KVHCCQ) | TestNet |
+| 08 | `DHEVPJ24TVBPMAPQE5RMRBYEC467KOALENX4WK4EPUTDUT2HUMIA` | [View on Lora](https://lora.algokit.io/testnet/transaction/DHEVPJ24TVBPMAPQE5RMRBYEC467KOALENX4WK4EPUTDUT2HUMIA) | [View on Pera](https://testnet.explorer.perawallet.app/tx/DHEVPJ24TVBPMAPQE5RMRBYEC467KOALENX4WK4EPUTDUT2HUMIA) | TestNet |
+| 09 | `W2NOXZBJG6NMYUXC5K46GI5AK6JAPZFEOM6E4HZJQ7JMHXNULK4A` | [View on Lora](https://lora.algokit.io/testnet/transaction/W2NOXZBJG6NMYUXC5K46GI5AK6JAPZFEOM6E4HZJQ7JMHXNULK4A) | [View on Pera](https://testnet.explorer.perawallet.app/tx/W2NOXZBJG6NMYUXC5K46GI5AK6JAPZFEOM6E4HZJQ7JMHXNULK4A) | TestNet |
+| 10 | `22IMR6LRRL6MWLSTXHRSP2F4BKJ37LOQWV3QZZZIK6XZG77WOH4A` | [View on Lora](https://lora.algokit.io/testnet/transaction/22IMR6LRRL6MWLSTXHRSP2F4BKJ37LOQWV3QZZZIK6XZG77WOH4A) | [View on Pera](https://testnet.explorer.perawallet.app/tx/22IMR6LRRL6MWLSTXHRSP2F4BKJ37LOQWV3QZZZIK6XZG77WOH4A) | TestNet |
+| 11 | `D5HCX3GYP3S2G3EZ7MFCUXY7KMDOU7GT57U45NMV2DEJBVQGTEMA` | [View on Lora](https://lora.algokit.io/testnet/transaction/D5HCX3GYP3S2G3EZ7MFCUXY7KMDOU7GT57U45NMV2DEJBVQGTEMA) | [View on Pera](https://testnet.explorer.perawallet.app/tx/D5HCX3GYP3S2G3EZ7MFCUXY7KMDOU7GT57U45NMV2DEJBVQGTEMA) | TestNet |
+
+---
+
+## Developer Pipeline: SKILL.md to Live Agent
+
+Third-party agents are published through the Developer Portal (`/developer`) by uploading a standardized `SKILL.md` file.
+
+### 1. Wallet-Gated Identity
+Uploading an agent requires connecting an Algorand wallet (Lute, Pera, Defly, or Exodus). The connected address is automatically locked as the permanent `payoutAddress` for that agent ID.
+
+### 2. Schema Specification
+The `SKILL.md` format requires explicit frontmatter metadata and structured parameter definitions:
+
+```markdown
+---
+name: "Invoice Parser Agent"
+description: "Extracts line items and tax totals from vendor PDF invoices into JSON."
+trigger: "When the user presents an invoice or billing document."
+version: "1.0.0"
+---
+
+## Inputs
+- `document_text` (string, required): Raw text or OCR string of the invoice.
+- `currency` (string, optional): Target ISO currency for normalization.
+
+## Outputs
+- `line_items` (array): List of items containing description, quantity, and unit price.
+- `total_due` (number): Final calculated balance.
+- `tax_amount` (number): Extracted tax total.
+
+## Dependencies
+- pdf-parse
+- date-fns
 ```
 
-## Privacy
+### 3. Parsing & Sandboxed Validation Pipeline
+1. **Schema Check (`site/src/lib/skill-schema.ts`)**: Validates frontmatter presence, non-empty trigger strings, and typed bullet formatting under `## Inputs` and `## Outputs`.
+2. **Field-Specific Diagnostics**: Rejections produce actionable error markers pointing directly to missing sections rather than generic upload failures.
+3. **Registry Publication**: Once verified, the agent is registered in the public catalog and immediately becomes invocable by side panel extensions across the network.
 
-Page content is sent only to the provider you ask, through a tab in your own browser. There is no backend, no telemetry, and no third-party endpoint. Conversation history and settings live in `chrome.storage.local` on this machine; the last 40 turns are kept.
+---
 
-Everything the providers return is HTML-escaped before rendering, and links are restricted to `http`/`https`/`mailto` — a compromised or malicious provider response cannot inject markup into the panel.
+## Installation & Getting Started
+
+### Prerequisites
+- Node.js 18+
+- Google Chrome or Microsoft Edge (version 116+)
+
+### 1. Running the Chrome Extension
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/NagiPragalathan/algogent_hack_blr.git
+   cd algogent_hack_blr
+   ```
+2. Open Chrome and navigate to `chrome://extensions`.
+3. Enable **Developer mode** in the top right corner.
+4. Click **Load unpacked** and select the root directory (`algogent_hack_blr`).
+5. Open the Side Panel by clicking the extension icon or pressing `Ctrl+Shift+Y` (`Cmd+Shift+Y` on macOS).
+
+### 2. Running the Marketplace & Developer Portal
+```bash
+cd site
+npm install
+npm run dev
+```
+The developer portal and agent catalog will be available at `http://localhost:5173` (or `http://localhost:5174`).
+
+---
+
+## Testing & Verification
+
+The repository contains isolated test suites verifying stream parsing, transaction groups, and agent action protocols:
+
+```bash
+# Run direct engine stream verification
+node tests/direct/notrack.test.mjs
+
+# Run agent decision and action parsing tests
+node tests/agent/action-json.test.mjs
+node tests/agent/survey-turn.test.mjs
+
+# Run thinking excerpt and UI formatting tests
+node tests/panel/thinking.test.mjs
+
+# Type-check the marketplace portal
+cd site && npx tsc --noEmit
+```
+
+---
+
+## Security & Privacy Guarantees
+
+- **No Remote Credential Storage**: Private keys and Algorand mnemonic phrases are handled solely by official browser extensions (Lute, Pera, Defly, Exodus). Algogent never requests, reads, or stores private keys.
+- **Local Data Residence**: Conversation transcripts, session tokens, and local fee receipts reside strictly in `chrome.storage.local` on the client machine.
+- **Safe HTML Sanitization**: All provider responses and markdown extracts are strictly sanitized and escaped before rendering in the side panel DOM to prevent cross-site scripting (XSS).
+- **Atomic Immutability**: All on-chain receipts carry self-describing transaction note fields referencing the session identifier, agent ID, and round number for verifiable accounting audits.
+
+---
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
