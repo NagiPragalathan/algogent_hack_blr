@@ -16,9 +16,30 @@ export function buildPrompt(question, context, extras = {}) {
       : question;
   }
 
+  /**
+   * The question is stated twice, and the first one is the point.
+   *
+   * A page extract can run to thousands of characters, so a prompt that opens
+   * with the page and asks the question underneath it has the model read
+   * everything before it knows what it is looking for — which is how a question
+   * about one line of a job board gets answered with a summary of the board.
+   * Saying it up front turns the read into a search.
+   *
+   * The closing `<question>` block stays, and is not redundant: it is the last
+   * thing read, which is where these models take their instruction from, and it
+   * is what the answer is actually written against. Primacy for the search,
+   * recency for the instruction.
+   */
   const parts = [
     'You are answering a question about web pages the user has shared.',
-    'Use the content below as your primary source. If the answer is not in it, say so plainly rather than guessing.',
+    '',
+    '<question>',
+    question,
+    '</question>',
+    '',
+    'That is what you are looking for. The page content follows — use it as your',
+    'primary source, read it with the question above in mind, and if the answer',
+    'is not in it say so plainly rather than guessing.',
     '',
     ...renderPage(context, { primary: true })
   ];

@@ -101,7 +101,7 @@ const { runAgent } = await import('../../src/background/agent/loop.js');
  * Returns every prompt that went out and every event that came back, which is
  * the whole of what this file asserts on.
  */
-async function drive(task, replies) {
+async function drive(task, replies, extra = {}) {
   const prompts = [];
   const events = [];
   let at = 0;
@@ -121,7 +121,8 @@ async function drive(task, replies) {
     confirm: async () => true,
     signal: { cancelled: false },
     policy: 'never',
-    pacing: false
+    pacing: false,
+    ...extra
   });
 
   return { prompts, events };
@@ -249,6 +250,36 @@ ok(
 ok(
   'and the ordinary closing is intact',
   /Reply with ONE fenced ```json block containing an "action", and nothing/.test(lookup.prompts[0] || '')
+);
+
+console.log('\na resumed thread is told the old task is over');
+
+// The measured failure: a chat whose previous run had read Gmail, given an
+// unrelated task, spent its steps on "the navigation to Gmail failed with a
+// 301 redirect". NEW_TASK_BANNER says so at the TOP of the first prompt, and
+// the whole element list sits between there and the end of the message.
+const resumed = await drive(TASK, [ROUTE, FINISH], { resumed: true });
+
+ok(
+  'the first turn says it at the END, not only the top',
+  /THAT TASK, AND ONLY THAT TASK/.test(resumed.prompts[0] || ''),
+  (resumed.prompts[0] || '').slice(-400)
+);
+ok(
+  'and the format demand is still the last thing read',
+  (resumed.prompts[0] || '').lastIndexOf('THAT TASK, AND ONLY THAT TASK') <
+    (resumed.prompts[0] || '').lastIndexOf('THIS IS YOUR FIRST TURN ON THIS PAGE')
+);
+ok(
+  'it stops once the run has actually acted',
+  !/THAT TASK, AND ONLY THAT TASK/.test(resumed.prompts[1] || '')
+);
+
+// A first run in a fresh chat has no history to disown, and warning about a
+// gap that is not there is its own kind of noise.
+ok(
+  'a fresh thread is never told any of this',
+  !/THAT TASK, AND ONLY THAT TASK/.test(run.prompts[0] || '')
 );
 
 console.log(`\n${pass}/${pass + fail} passed`);

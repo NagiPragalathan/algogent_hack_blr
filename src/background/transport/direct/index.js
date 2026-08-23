@@ -720,6 +720,33 @@ export function directRunnable(provider, settings) {
 }
 
 /**
+ * …and could it carry a run that never needs a picture?
+ *
+ * The rule above is right about why a run cannot switch transport halfway. It
+ * quietly assumed something else, though: that every run needs a camera. Most
+ * do not. Vision is rationed to `MAX_AUTO_LOOKS` precisely because a screenshot
+ * is the most expensive thing in a turn, and the ordinary run — a form, a
+ * search, a list of results — never takes one. Those runs were paying the
+ * window's ten-to-forty seconds on every one of thirty turns to keep a
+ * capability they never used.
+ *
+ * So the question is asked in two halves. `directRunnable` is "can this engine
+ * deliver a picture", and a yes means the run goes direct with vision intact.
+ * This one is "is there an engine here at all", and a yes means the run MAY go
+ * direct if the loop, having looked at the page and the task, decides no picture
+ * will be wanted — see `decideTransport` in run.js and `needsVision` in loop.js.
+ *
+ * What makes that safe is the same thing that makes the split honest: the run is
+ * told it has no camera, up front and in the closing block of every turn. The
+ * failure this whole area exists to prevent is a model that is TOLD a screenshot
+ * is attached and reasons about one it never saw. Being told there is none, and
+ * that the screenshot action will be declined, is the opposite of that.
+ */
+export function directTextRunnable(provider, settings) {
+  return Boolean(engineFor(provider, settings));
+}
+
+/**
  * Has the user said a window must never open for this provider?
  *
  * The silent fallback is the right default and is written down at the top of

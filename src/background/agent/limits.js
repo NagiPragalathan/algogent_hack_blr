@@ -113,11 +113,13 @@ export const MAX_BATCH_ACTIONS = 16;
  *
  * The pointer animates for 220ms and a batch used to fire every action inside
  * one frame of that, so it teleported and the page appeared to change on its
- * own. 420ms is enough to read a move as a move without turning a sixteen
- * action batch into a wait — that is under seven seconds of pacing against a
- * provider round trip of ten to forty.
+ * own. 420ms read a move as a move — and on a sixteen-action batch it was seven
+ * seconds of the run spent watching an arrow, which was defensible only while
+ * every provider round trip cost ten to forty seconds. Lowered to 140ms: the
+ * move is still visible as a move, and a full batch now costs about two seconds
+ * rather than seven.
  *
  * Gated on the `agentPacing` setting, because it IS real time and someone who
  * trusts the run should be able to have the speed instead.
  */
-export const AGENT_BEAT_MS = 420;
+export const AGENT_BEAT_MS = 140;

@@ -69,6 +69,8 @@ tests/
   direct/notrack.test.mjs  the engine driven on a faked stream: node tests/direct/notrack.test.mjs
   agent/run-slot.test.mjs  the one-run-at-a-time slot, and Stop unwinding
   agent/survey-turn.test.mjs  the plan and the first action in one round trip
+  agent/not-a-task.test.mjs   "hyy" must not take over the browser
+  agent/blind-transport.test.mjs  when a run may take the fast path with no camera
   panel/*.html           self-checking browser fixtures — see the end of this file
 
 src/content/             classic content scripts (NOT ES modules — see below)
@@ -139,6 +141,84 @@ speaks an undocumented, unversioned endpoint its owner changes without notice �
 so a break must degrade to "slower", never to "broken". Nothing in that folder
 reports a failure to the user: it returns null and the window answers.
 
+**A run may give up its camera to take the fast path — but only after the page
+and the task have both said it will not need one.** The rule below is right
+that a run cannot change transport halfway. It quietly assumed something else:
+that every run needs vision. Most do not. Screenshots are rationed to
+`MAX_AUTO_LOOKS` precisely because they are the most expensive thing in a turn,
+and the ordinary run — a form, a search, a list of results — never takes one. So
+Claude, Meta AI and NoTrack were paying the window's ten-to-forty seconds on
+every one of thirty turns to keep a capability they never used.
+
+The question is now asked in two halves. `directRunnable` is "can this engine
+deliver a picture" — yes means direct with vision intact, unchanged.
+`directTextRunnable` is "is there an engine here at all" — yes means the run MAY
+go direct, and `decideTransport` in `run.js` settles it from what `loop.js`
+finds. Still ONCE, before the first ask; that invariant is untouched, and it is
+the whole of the correctness.
+
+`needsVision` is two tests and they catch different things. `opaqueStart` is the
+PAGE saying it cannot be read — canvas, video, embedded PDF, a frame with no
+text — which is exactly where working from the DOM produces a confident answer
+about something nobody looked at. `VISUAL_TASK` is the USER saying it: "edit
+this canvas", "read the PDF", "what does this chart show". Either one keeps the
+camera, which means the window. It errs towards vision on purpose — being wrong
+that way costs seconds a turn, being wrong the other way costs the run its eyes
+on the one page that needed them — and `VISUAL_TASK` is matched against
+`instructionOf(task)` for the same reason `WHOLE_PAGE_TASK` is: a CV mentioning
+"design" must not put every run that carries one onto the window.
+
+`opaqueStart` is already null on the placeholder start page, and that carries
+over exactly right: google.com reads as an unreadable frame (see below), so
+judging a blank start by it would drag every one of those runs onto the window
+over a page the task is not about. The residual cost is a run that navigates to
+a PDF and finds it has no camera — and it SAYS so and finishes, which is the
+behaviour this whole area is built around.
+
+Two things make the trade honest rather than a silent downgrade. The model is
+TOLD, in the closing block of every turn (`blind` in `closing()`), that there is
+no camera, that `screenshot` will be declined, and specifically that it must not
+guess x/y — because the failure next door is a model reasoning about a picture
+it never saw. And the timeline says it once, naming the trade, so "why is this
+run fast" and "why did it not look at the chart" have the same answer on screen.
+`survey()` also skips its stitched capture when blind: seconds spent
+photographing a page for a message that cannot carry it.
+
+**Speed: the artificial spacing came down, the stand-down did not.** On the
+user's explicit instruction, `CHAT_GAP_MS` 1100 → 400, `RUN_GAP_MS` 2600 → 800,
+the jitter tail 3× → 1.8×, and `AGENT_BEAT_MS` 420 → 140. The run gap's old
+justification — "a minute across a forty-step run is single-digit percent
+against turns of ten to forty seconds" — was true only while every run went
+through a window; on the fast path a turn is two or three seconds and 2.6s in
+front of it is most of the wait. The read term is now ZERO for `intent: 'run'`:
+it models a person taking in the last answer before typing the next thing, which
+is a fair model of a chat and a plainly false one of a loop, where the reply went
+to a parser and the next prompt was already being built.
+
+What is deliberately NOT reachable from any of this: `coolOff`. A 429 or a 403 is
+the provider having said no in the only way it has, and no setting and no
+instruction touches that branch. The hourly ceiling stays too — it is what makes
+a runaway loop visible.
+
+**The user's question goes first as well as last.** A page extract runs to
+thousands of characters, and a prompt that opens with the page and asks the
+question underneath it has the model read everything before it knows what it is
+looking for — which is how a question about one line of a job board comes back
+as a summary of the board. `buildPrompt` now states it up front and keeps the
+closing `<question>` block, and the agent's first message opens with `THE USER'S
+TASK` above the action vocabulary. Not redundancy: primacy turns the read into a
+search, recency is where these models take their instruction from, and the two
+positions are doing different jobs.
+
+**The answer is rendered as markdown and nothing told the model so.** Measured on
+the Gmail run: five messages, each with a subject, a sender and a summary,
+delivered as one 90-word sentence with "1)… 2)… 3)…" inside it. Every fact was
+there and none of it was findable. The `finish` rule now names the shape — "## "
+headings, "- " bullets, bold for the thing being named, a table when the items
+share fields, one bullet per item and never one paragraph — because "use
+markdown" is not specific enough to change what a model writes. It also says
+newlines must be `\n`, since the answer travels inside a JSON string.
+
 **An agent run picks its transport ONCE, and the test is "can this engine carry
 a picture?"** A run is thirty round trips rather than one, so it is where the
 speed-up is worth most — and it is also the case that breaks first if the
@@ -196,6 +276,16 @@ plain `text`; only a picture becomes a `multimodal_text` part. Gemini's push
 host asks nothing about what the bytes are, so both are one call there — but the
 capability is still declared separately, because it comes apart at the other
 engines.
+
+**`ready` is a phase, not a keystroke, and the label claimed the keystroke.**
+It is posted the instant the adapter is in the page — before a character has
+been inserted — and it stays up through the insert, the send click and up to
+four seconds of proving delivery. On the window path that is tens of seconds, in
+which the panel said "typing the message" while the provider's composer, plainly
+visible next to it, was empty. Reported as exactly that: *"it's showing like
+typing but nothing is getting typed."* The wording names the phase now. The
+underlying wait is the window path itself, and the fix for that is not a label —
+it is `directTextRunnable` above, or a provider whose engine can carry the run.
 
 **`ready` used to say "Provider window open" on a path that opens no window.**
 The agent's stage track was written when there was one transport, and the direct
@@ -1716,6 +1806,52 @@ for unread counts, and putting back a guess leaves the page permanently wrong in
 a way nobody would connect to us. A cross-origin icon taints the canvas and
 `toDataURL` throws; that is caught and ignored, because the dot is a nicety and
 the line is the indicator that has to work.
+
+**A greeting is not a task, and a run started on one never ends.** "hyy", typed
+with Agent Mode still lit from the previous question, opened a start page, took
+a screenshot of it, and searched Google for "hyy" — because a model handed a
+browser and told to act will act, and the vocabulary has no way to say "there is
+nothing here to do". Nothing can ever count as finishing, so it runs to
+`MAX_STEPS` with a curtain over the page.
+
+`isNotATask` in `run.js` is the guard, and three things about it are
+deliberate. It is checked BEFORE `resolveAgentTab`, which navigates a tab and
+waits up to five seconds for it to settle — the point is that the user's browser
+is not touched at all. It ANSWERS rather than refusing: a red error over a
+greeting reads as a fault in the extension, and what the person actually needs is
+the sentence saying what to type instead. And it matches the WHOLE input rather
+than searching inside it, because "hi, open my gmail" is a real task with a
+greeting on the front. One short token, nothing with a space in it.
+
+The character classes rather than a word list are the other half. What people
+type is "hyy", "hii", "heyyy", "helloo", "okkk" — a fixed list of correctly
+spelled greetings catches none of them, which is how this reached the browser in
+the first place.
+
+**A resumed thread has to be told the old task is over at the END of the
+message, not only the top.** `NEW_TASK_BANNER` exists and is correct, and it is
+the first thing in the first prompt — with the entire element list and up to 45k
+characters of page between it and the end. What the model acts on is what it
+read last. Measured: a chat whose previous run had read Gmail, given an
+unrelated task, came back *"The navigation to Gmail failed with a 301 redirect,
+likely due to browser fingerprinting… I will attempt to observe the current
+state"* — several steps into a run that had nothing to do with Gmail, with the
+panel showing the new task throughout. From outside, the run simply did
+something nobody had asked for.
+
+So `run.js` passes `resumed: sameSession` into the loop and `closing()` restates
+it, placed after `THE USER'S TASK` and before the format demand: it is about
+WHICH task, so it belongs beside the task, and the last thing read must still be
+the shape of the reply. Same division of labour as every other rule here that
+appears in two places — this is not belt and braces, it is the half that lands.
+
+`disownOldTask` is its own flag rather than `resumed && step === 0`, and that is
+not style: `step` is declared below the first `message`, so reading it from
+`tail()` is a temporal dead zone error — one that fires ONLY when `resumed` is
+true, because the `&&` short circuits otherwise. It survives a misread re-ask on
+purpose (a model answering about the old task is exactly the case being
+corrected) and clears the moment a reply carries an action, because from then on
+the thread's most recent history is this run's own.
 
 **Every AGENT_ERROR needs an AGENT_FINISHED.** Only `AGENT_FINISHED` releases the
 composer. A preflight refusal that sends the error alone freezes the panel until

@@ -2,7 +2,7 @@ import { PROVIDER_ORDER } from '../../providers/config.js';
 import { resolveUserTab, focusedUserTab, isOrdinaryUrl } from '../state/user-tabs.js';
 import { isRelayWindow, whenRelayReady } from '../relay.js';
 import { askProvider, warmProvider } from '../transport/ask-provider.js';
-import { directRunnable } from '../transport/direct/index.js';
+import { directRunnable, directTextRunnable } from '../transport/direct/index.js';
 import { holdKeepAlive, releaseKeepAlive } from '../transport/inflight.js';
 import { waitForLoad, settle, releaseControl, startTabSession } from './page.js';
 import { hasConversation } from '../state/conversations.js';
@@ -172,6 +172,42 @@ export async function startAgentRun({ msg, settings, providers, post }) {
     return;
   }
 
+  /**
+   * A greeting is not a task, and a run started on one never ends.
+   *
+   * Typed with Agent Mode still on from the last question, "hyy" took over the
+   * browser: a start page was opened, the page was photographed, and the model
+   * — handed a browser and told to act — did the only thing the vocabulary
+   * allows and searched Google for "hyy". Measured: four steps and forty
+   * seconds in, with a curtain over the page and nothing that could ever count
+   * as finishing, because there is no goal to meet. It runs to MAX_STEPS.
+   *
+   * Answered rather than refused, and BEFORE `resolveAgentTab`, which navigates
+   * a tab and waits up to five seconds for it to settle. A red error over a
+   * greeting reads as a fault; what the person needs is the sentence that says
+   * what to type instead, and their page left alone.
+   *
+   * Deliberately narrow — one short token, nothing else. "hi, open my gmail" is
+   * a task with a greeting on the front and must still run, which is why this
+   * tests the WHOLE input rather than searching it.
+   */
+  if (isNotATask(msg.task)) {
+    release();
+    post({
+      type: 'AGENT_DONE',
+      runId: msg.runId,
+      answer:
+        'That is not something I can do on a page, so nothing was opened and ' +
+        'your tabs were left alone.\n\nTell me what you would like done here — ' +
+        '"read the top 5 unread emails", "fill this form in from my CV", ' +
+        '"find the cheapest flight on this page" — or switch Agent Mode off to ' +
+        'just chat.',
+      steps: 0
+    });
+    post({ type: 'AGENT_FINISHED', runId: msg.runId });
+    return;
+  }
+
   const target = await resolveAgentTab(msg.tabId);
   if (target.error) {
     refuse(target.error);
@@ -284,7 +320,14 @@ export async function startAgentRun({ msg, settings, providers, post }) {
    * Gemini can, and a run is where the speed-up is worth most — thirty round
    * trips rather than one.
    */
-  const allowDirect = directRunnable(provider, settings);
+  let allowDirect = directRunnable(provider, settings);
+
+  /**
+   * This provider has an engine but no uploader, so a run may go direct only if
+   * it will never want a picture. The loop decides that from the page and the
+   * task, once, before the first turn — see `decideTransport` below.
+   */
+  const blindDirectPossible = !allowDirect && directTextRunnable(provider, settings);
 
   /**
    * This chat belongs to the window, and so will every turn of this run.
@@ -317,12 +360,49 @@ export async function startAgentRun({ msg, settings, providers, post }) {
     });
   }
 
-  warmProvider(provider, settings, {
-    scope: 'chat',
-    sessionId: msg.sessionId ?? null,
-    fresh: !sameSession,
-    allowDirect
-  });
+  /**
+   * Build the window while the page is being read — unless we do not yet know
+   * whether one is needed.
+   *
+   * Warming a provider that then answers over its own API puts a window and
+   * Chrome's "started debugging this browser" bar on screen for a request that
+   * never uses either, which is the same complaint `strict` had to fix. So when
+   * `blindDirectPossible` is open, warming waits for `decideTransport` and
+   * happens there, on the branch that actually wants a page.
+   */
+  const warm = () =>
+    warmProvider(provider, settings, {
+      scope: 'chat',
+      sessionId: msg.sessionId ?? null,
+      fresh: !sameSession,
+      allowDirect
+    });
+
+  if (!blindDirectPossible) warm();
+
+  /**
+   * One transport for the whole run, chosen before the first turn.
+   *
+   * Still once — that is the invariant, and it is what keeps a run's history in
+   * one provider thread. What changed is only WHEN: an engine that cannot carry
+   * a picture used to lose the whole run to the window on the strength of the
+   * screenshots most runs never take. The loop knows whether this one will,
+   * because it has just read the page and been given the task, so it answers
+   * here and the answer is fixed from that moment.
+   */
+  const decideTransport = ({ needsVision }) => {
+    if (allowDirect) return { direct: true, blind: false };
+
+    if (!blindDirectPossible || needsVision) {
+      // The window it is. Start building it now rather than at ask time — the
+      // prompt still has an observation to be rendered into it.
+      if (blindDirectPossible) warm();
+      return { direct: false, blind: false };
+    }
+
+    allowDirect = true;
+    return { direct: true, blind: true };
+  };
 
   /**
    * The model can see the whole of this conversation above the task. Say so.
@@ -517,6 +597,24 @@ export async function startAgentRun({ msg, settings, providers, post }) {
        * every later turn as the route to follow.
        */
       blankStart: Boolean(target.opened),
+      /**
+       * This run is joining a thread that already holds finished work.
+       *
+       * NEW_TASK_BANNER says so at the TOP of the first prompt — and the top of
+       * that prompt is a long way from the end of it, with the whole element
+       * list and page text in between. Measured: a chat whose previous run had
+       * read Gmail, given a new task, came back "The navigation to Gmail failed
+       * with a 301 redirect… I will attempt to observe the current state" — the
+       * model carrying on with the task before it, several steps into a run
+       * that had nothing to do with Gmail.
+       *
+       * So the loop restates it in the TAIL of the first turn, where recency
+       * works for us. Same division of labour as every other rule here that
+       * appears twice: this is not belt and braces, it is the half that lands.
+       */
+      resumed: sameSession,
+      // Called once, after the first observation and before the first ask.
+      decideTransport,
       ask,
       confirm,
       signal,
@@ -612,6 +710,34 @@ async function resolveAgentTab(explicitTabId) {
   // Re-read it for the settled URL — a freshly created tab reports none yet.
   const tab = await chrome.tabs.get(opened.id).catch(() => opened);
   return { tab, opened: true };
+}
+
+/**
+ * Input with no task in it: a greeting, an acknowledgement, a stray keystroke.
+ *
+ * Matched against the WHOLE input, trimmed of punctuation — never searched for
+ * inside it — because "hi, open my gmail" is a real task and must run. One
+ * token only, and a short one: anything with a space in it has been given the
+ * benefit of the doubt since a two-word instruction ("open gmail") is a task
+ * and a two-word greeting costs nothing but one refusal to act.
+ *
+ * Repeated letters are the point of the character classes. What people actually
+ * type is "hyy", "hii", "heyyy", "helloo", "okkk" — a fixed word list catches
+ * none of them, which is how "hyy" reached the browser in the first place.
+ */
+const NOT_A_TASK =
+  /^(?:h+[aeiy]+[aeiyh]*|hey+|hell?o+|hlo+|yo+|sup|wass?up|ok+(?:ay+)?|kk*|thanks*|thx|ty|tq|test+|hmm+|hm+|asdf+|qwerty+|lol+|nvm|nothing|nil|na|no|yes|yeah|yep|yup|nope|bye+|gm|gn)$/i;
+
+export function isNotATask(task) {
+  const text = String(task || '')
+    .trim()
+    .replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, '')
+    .trim();
+
+  // Nothing at all, or a line of punctuation: also not a task.
+  if (!text) return true;
+  if (/\s/.test(text)) return false;
+  return text.length <= 12 && NOT_A_TASK.test(text);
 }
 
 /**

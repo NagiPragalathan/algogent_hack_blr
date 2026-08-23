@@ -89,7 +89,27 @@ export async function runAgent({
    * `closing()` then repeats it as YOUR PLAN on every later turn — so it is not
    * merely slow, it anchors the rest of the run to the wrong page.
    */
-  blankStart = false
+  blankStart = false,
+  /**
+   * The provider thread already holds a finished task, or an ordinary question
+   * the user asked in this same chat.
+   *
+   * `run.js` puts NEW_TASK_BANNER at the top of the first prompt for it. This
+   * is the other end of the same message — see `tail()` — because between the
+   * two sits the entire element list and up to 45k characters of page, and the
+   * banner does not survive that distance. The measured symptom is a run that
+   * carries on with the PREVIOUS task while the panel shows the new one.
+   */
+  resumed = false,
+  /**
+   * Ask the caller to fix the transport for this run, now that the page has
+   * been read. Answers `{ direct, blind }`; `blind` means the run goes the fast
+   * way and no picture can be attached to any turn of it.
+   *
+   * Defaulted so the loop stays drivable from a test with three arguments, and
+   * so a caller that has no opinion behaves exactly as it did before.
+   */
+  decideTransport = () => ({ direct: false, blind: false })
 }) {
   /** The working set as `{id, title, url}`, always containing the start tab. */
   const workingTabs =
@@ -384,6 +404,52 @@ export async function runAgent({
    * photograph a search box.
    */
   const opaqueStart = blankStart ? null : unreadableReason(first.observation);
+
+  /**
+   * Will this run want a picture at all?
+   *
+   * Asked once, here, because this is the only moment that has both halves of
+   * the evidence: the page has been read and the task has been given, and
+   * nothing has happened yet that could make the answer change under the run.
+   *
+   * Two tests, and they catch different things. `opaqueStart` is the page saying
+   * it cannot be read — a canvas, a video, an embedded PDF, a frame with no
+   * text — which is exactly the case where working from the DOM produces a
+   * confident answer about a page nobody looked at. The task test is the user
+   * saying it: "edit this canvas", "read the PDF", "what does this chart show".
+   * Either one keeps the camera, and keeping the camera means the window.
+   *
+   * It errs towards vision deliberately. Being wrong that way costs seconds per
+   * turn; being wrong the other way costs the run its eyes on the one page that
+   * needed them.
+   *
+   * `opaqueStart` is already null on the placeholder start page, which is right:
+   * google.com reads as an unreadable frame (see above) and every blank-start
+   * run would otherwise be dragged onto the window by a page the task is not
+   * about. The cost is a run that navigates to a PDF and finds it has no
+   * camera — and it SAYS so rather than inventing coordinates, which is the
+   * behaviour the whole area is built around.
+   */
+  const transport = decideTransport({
+    needsVision: Boolean(opaqueStart) || VISUAL_TASK.test(instructionOf(task))
+  });
+
+  if (transport.blind) {
+    blindProvider = true;
+    emit({
+      type: 'AGENT_STEP',
+      step: 0,
+      kind: 'screenshot',
+      description: 'Working from the page text',
+      note:
+        'This run takes the fast path, which cannot carry a picture — so no ' +
+        'screenshots, and the whole run answers in seconds per step rather than ' +
+        'tens of seconds. Nothing here looked like it would need one. Ask for ' +
+        'something visual — a canvas, a video, a PDF — and the run takes the ' +
+        'window instead, with vision.'
+    });
+  }
+
   if (opaqueStart) {
     pendingImage = await captureTab(currentTab, { label: 'Agent is looking' });
     if (pendingImage) {
@@ -448,12 +514,31 @@ export async function runAgent({
    */
   let surveying = false;
 
+  /**
+   * Say, in the tail of every turn until one of them acts, that the finished
+   * work above this run is not this run's.
+   *
+   * Its own flag rather than `resumed && step === 0`: `step` is declared below
+   * the first message, so reading it from `tail()` is a temporal dead zone
+   * error — and one that only fires when `resumed` is true, because the && short
+   * circuits otherwise. It survives a misread re-ask deliberately, since a model
+   * that answered about the OLD task is exactly the case being corrected; once
+   * the run has acted, the thread's recent history is this run's own and the
+   * warning would be about a gap that is no longer there.
+   */
+  let disownOldTask = resumed;
+
   const tail = () =>
     closing(task, plan, {
       tabs: workingTabs,
       currentTab,
       mayAsk,
-      survey: surveying ? SURVEY_FORMAT : ''
+      survey: surveying ? SURVEY_FORMAT : '',
+      newTask: disownOldTask,
+      // Said every turn, not once: a model that plans around taking a screenshot
+      // spends a turn discovering it cannot, and the refusal it gets back is a
+      // full round trip late.
+      blind: blindProvider
     });
 
   /**
@@ -497,8 +582,11 @@ export async function runAgent({
      * a Google homepage: the whole survey was capture, upload and wait for a
      * picture of a search box the element list had already described.
      */
+    // A capture costs a tab activation and a stitch per screenful. With no
+    // camera on this run, all of that is spent on a picture nothing can send.
     const needsPicture =
-      Boolean(observation.moreBelow) || Boolean(unreadableReason(observation));
+      !blindProvider &&
+      (Boolean(observation.moreBelow) || Boolean(unreadableReason(observation)));
 
     const full = needsPicture
       ? await captureFullTab(currentTab, {
@@ -585,6 +673,17 @@ export async function runAgent({
   }
 
   let message =
+    /**
+     * The task before the rules, and before the page.
+     *
+     * `closing()` already restates it at the end of every turn, which is where
+     * the instruction lands. What was missing is the other end: the first
+     * message opens with the whole action vocabulary and then up to 45k
+     * characters of page, so the model read all of it before being told what it
+     * was for. Stating it first turns that read into a search for the thing the
+     * task names.
+     */
+    `THE USER'S TASK: ${task}\n\n` +
     systemPrompt(task) +
     '\n\n' +
     /**
@@ -850,6 +949,9 @@ export async function runAgent({
     // which is what a run's cost and its patience are actually made of.
     misreads = 0;
     step += 1;
+    // This run has acted: what is above it in the thread is no longer the most
+    // recent thing the model did, so there is nothing left to disown.
+    disownOldTask = false;
 
     if (dropped) {
       emit({
@@ -1361,6 +1463,27 @@ function hostOf(url) {
 
 const A_NUMBER =
   '(?:\\d+|a few|several|couple(?: of)?|one|two|three|four|five|six|seven|eight|nine|ten|dozen)';
+
+/**
+ * A task that is about what something LOOKS like, rather than what it says.
+ *
+ * The list is the user's own: canvas editing, video, PDF, "like those" — work
+ * the DOM cannot describe, where text extraction returns almost nothing and a
+ * model handed that either invents an answer or apologises about a page that
+ * was full of what it needed.
+ *
+ * Generous on purpose, and generous in the safe direction: a false positive
+ * costs this run the fast path, a false negative costs it its eyes. So the
+ * common nouns are in — chart, graph, image, colour, layout — even though they
+ * appear in plenty of tasks that would have been fine without a camera.
+ *
+ * Tested against `instructionOf(task)` rather than the whole thing, for the same
+ * reason `WHOLE_PAGE_TASK` is: a task is often pasted material with the request
+ * at one end, and a CV mentioning "design" would otherwise put every run that
+ * carries one onto the window.
+ */
+const VISUAL_TASK =
+  /\b(?:canvas|draw(?:ing)?|sketch|diagram|chart|graph|plot|infographic|image|images|photo|photos|picture|pictures|screenshot|video|clip|pdf|scan(?:ned)?|slide|slides|deck|map|colou?r|colou?rs|design|layout|thumbnail|crop|figma|whiteboard|look(?:s)? like|visually|on ?screen)\b/i;
 
 const WHOLE_PAGE_TASK = new RegExp(
   [

@@ -310,10 +310,24 @@ const PHASE = {
  * there is one: it is the visible, invasive half of the extension, and knowing
  * a run is on that road is what makes "why has something opened?" answerable.
  */
+/**
+ * `ready` covers everything between the window being usable and the send being
+ * proved, and "typing the message" claimed only the middle of it.
+ *
+ * The state is posted the moment the adapter is in the page — before a
+ * character has been inserted — and it stays up through the insert, the send
+ * click and up to four seconds of proving delivery. On the window path that is
+ * tens of seconds, during which the panel said the message was being typed and
+ * the provider's composer, plainly visible, was empty. Reported as exactly
+ * that: "it's showing like typing but nothing is getting typed."
+ *
+ * A label naming something the user can go and look at has to survive them
+ * looking. This one names the phase instead of a keystroke.
+ */
 const VIA = {
   direct: "Posting straight to the provider's API — no window",
-  window: 'Provider window open, typing the message',
-  frame: 'Background frame ready, typing the message'
+  window: 'Provider window open — handing over the message',
+  frame: 'Background frame ready — handing over the message'
 };
 
 const phaseText = (phase, via) => (phase === 'ready' && VIA[via]) || PHASE[phase];

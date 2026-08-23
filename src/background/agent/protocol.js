@@ -334,6 +334,30 @@ export function systemPrompt(task) {
     '  the user only sees that, not your intermediate steps. Include every item',
     '  you found, not a sample of them, and say plainly which parts of the task',
     '  you did not manage.',
+    /**
+     * The answer is rendered as markdown, and nothing said so.
+     *
+     * The panel runs `lib/markdown.js` over it — headings, bullets, tables, code
+     * fences, all of it. Told nothing, the model writes one paragraph with
+     * "1)… 2)… 3)…" inside it, which renders as exactly what it is: a wall.
+     * Measured on the Gmail run — five messages, each with a subject, a sender
+     * and a summary, delivered as a single 90-word sentence. The information was
+     * all there and none of it was findable.
+     *
+     * A list of items is the shape these tasks actually produce, so it is named
+     * outright rather than left to "use markdown". The escaping is worth saying
+     * too: the answer travels as a JSON string, so a literal newline breaks the
+     * block and `parseAction` has to guess — which it can, but a truncated guess
+     * costs a round trip.
+     */
+    '- Write the answer as MARKDOWN. It is rendered, so use it: "## " headings',
+    '  when there is more than one part, "- " bullets for a list, "**bold**" for',
+    '  the thing being named, a table when the items share fields. When the task',
+    '  produced a set of items — messages, jobs, prices, results — give each one',
+    '  its own bullet or row with its name in bold, never one paragraph with',
+    '  "1)" and "2)" inside it. Keep it tight: the summary the user asked for,',
+    '  not a transcript of the run.',
+    '- Newlines inside "answer" must be written \\n, because the block is JSON.',
     `- Stop by step ${MAX_STEPS}; after that the run is cut off.`,
     '',
     'THE USER\'S TASK:',
@@ -804,7 +828,18 @@ function tabBlock(tabs, currentTab) {
  * and nothing else, and the two instructions cannot both be at the end of the
  * message. See SURVEY_FORMAT for why the halves are ordered as they are.
  */
-export function closing(task, plan = '', { tabs = null, currentTab = null, mayAsk = true, survey = '' } = {}) {
+export function closing(
+  task,
+  plan = '',
+  {
+    tabs = null,
+    currentTab = null,
+    mayAsk = true,
+    survey = '',
+    newTask = false,
+    blind = false
+  } = {}
+) {
   return [
     '',
     '',
@@ -849,6 +884,34 @@ export function closing(task, plan = '', { tabs = null, currentTab = null, mayAs
     `THE USER'S TASK: ${task}`,
     '',
     /**
+     * The thread above is finished work, and saying so at the top did not take.
+     *
+     * `run.js` opens the first prompt with NEW_TASK_BANNER, which is correct
+     * and is not enough: everything between it and here is the element list and
+     * the page, thousands of characters of it, and what the model acts on is
+     * what it read last. Measured — a chat whose previous run had read Gmail,
+     * given an unrelated task, spent its steps on "the navigation to Gmail
+     * failed with a 301 redirect, I will observe the current state". The panel
+     * showed the new task throughout, so from outside the run simply did
+     * something nobody asked for.
+     *
+     * Placed after the task and before the format demand deliberately: it is
+     * about WHICH task, so it belongs next to the task, and the last thing read
+     * must still be the shape of the reply.
+     */
+    ...(newTask
+      ? [
+          'THAT TASK, AND ONLY THAT TASK. Everything earlier in this conversation',
+          'is over — a task that already finished, or a question the user asked in',
+          'this same chat. Do not continue it, do not repeat it, do not report on',
+          'it, and do not answer any question left open up there. If your last',
+          'reply in this thread was about a different site or a different goal,',
+          'that was the old task: drop it. Look at the page you have been given',
+          'above and act on the task named here.',
+          ''
+        ]
+      : []),
+    /**
      * Said BEFORE it happens, because the correction afterwards costs a round
      * trip and often does not work.
      *
@@ -860,6 +923,29 @@ export function closing(task, plan = '', { tabs = null, currentTab = null, mayAs
      * doing, one move earlier, and it needs saying in the block that is
      * repeated every turn rather than only in the push-back after the fact.
      */
+    /**
+     * No camera on this run, said before it is discovered by being refused.
+     *
+     * The same shape as `mayAsk`: the model reaches for a screenshot when the
+     * element list stops explaining a page, which is the right instinct, and
+     * finding out it cannot have one costs a full provider round trip. Worse,
+     * the failure mode next door is a model that believes a picture arrived and
+     * invents coordinates for it — so the useful thing to say is not "no" but
+     * "there will never be one, and here is what to do instead".
+     */
+    ...(blind
+      ? [
+          'THERE IS NO CAMERA ON THIS RUN. No screenshot will ever be attached to',
+          'any turn, and {"action":"screenshot"} will be declined — this provider',
+          'is being reached the fast way, which cannot carry a picture. Work from',
+          'the page text and the numbered elements. Never guess at x/y',
+          'coordinates: with no picture, click_at and a typed x/y are aiming at',
+          'nothing. If a page turns out to be unreadable as text — a canvas, a',
+          'video, a scanned PDF — say exactly that and finish, rather than',
+          'describing what you think is on it.',
+          ''
+        ]
+      : []),
     'Your own knowledge is not an answer here. Whatever you already believe',
     'about the subject, this task is to go and look: open the pages, read what',
     'is actually on them, and build the answer from what you found. Writing it',

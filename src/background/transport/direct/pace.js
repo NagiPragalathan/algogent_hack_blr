@@ -103,20 +103,36 @@ const flush = () => chrome.storage.session.set({ [KEY]: state });
  * Spacing
  * ---------------------------------------------------------------------- */
 
-/** The floor between two questions typed by a person. */
-const CHAT_GAP_MS = 1100;
+/**
+ * The floor between two questions typed by a person.
+ *
+ * Lowered from 1100ms on the user's explicit instruction: this is OUR caution
+ * about a rate nobody complained about, not anything a provider asked for, and
+ * it was the largest fixed cost on a path whose whole point is that it answers
+ * in a second. Kept above zero because it still has a job — see UNSAFE_GAP_MS.
+ */
+const CHAT_GAP_MS = 400;
 
 /**
  * The floor between two turns of an agent run, which is deliberately higher.
  *
  * A run is the volume path — thirty to forty round trips for one instruction,
- * back to back, with nobody reading anything in between — so it is where a
- * per-request gap buys the most and costs the least. At 2.6s a forty-step run
- * spends about a minute more than it would at the chat gap, against provider
- * turns of ten to forty seconds each: single-digit percent of the run, for the
- * single biggest reduction in how fast this can hit an endpoint.
+ * back to back — so it was given the widest floor: 2.6s, on the reasoning that
+ * a minute across a forty-step run is single-digit percent against provider
+ * turns of ten to forty seconds each.
+ *
+ * That reasoning held while every run went through a window. It does not hold
+ * now. A run on the fast path answers in two or three seconds a turn, and a
+ * 2.6s gap in front of each of those is not single-digit percent of anything —
+ * it is most of the wait. Lowered to 800ms on the user's explicit instruction.
+ *
+ * What is NOT lowered, and must not be: `coolOff`. The gap is this extension
+ * being careful about a rate nobody objected to; a 429 or a 403 is the provider
+ * having said no in the only way it has, and no setting and no instruction here
+ * reaches that branch. The hourly ceiling stays too — it is what makes a
+ * runaway loop visible.
  */
-const RUN_GAP_MS = 2600;
+const RUN_GAP_MS = 800;
 
 /**
  * The gap when the user has switched the holding back off.
@@ -136,7 +152,19 @@ const UNSAFE_GAP_MS = 120;
  * because nobody reads the whole of a very long answer before following up.
  */
 const READ_MS_PER_CHAR = 1.1;
-const MAX_READ_MS = 7000;
+const MAX_READ_MS = 2500;
+
+/**
+ * …and nobody is reading anything during an agent run.
+ *
+ * The read term models a person taking in the last answer before typing the
+ * next thing, which is a fair model of a chat and a plainly false one of a
+ * loop: what came back was a JSON action, it went to a parser, and the next
+ * prompt was already being built. Charging up to seven seconds of imaginary
+ * reading per turn was the single largest avoidable delay in a long run —
+ * measured against a forty-step run, minutes of it.
+ */
+const READ_MS_PER_CHAR_RUN = 0;
 
 /**
  * Jitter, log-normal rather than uniform.
@@ -153,7 +181,10 @@ function jitter() {
   const u = Math.random() || 1e-9;
   const v = Math.random() || 1e-9;
   const normal = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-  return Math.min(3, Math.max(0.65, Math.exp(normal * 0.4)));
+  // The tail is narrower than it was (3x -> 1.8x). A long right tail is the
+  // most human-looking part of this, and it is also the part that occasionally
+  // put eight seconds in front of a turn for no reason anybody could see.
+  return Math.min(1.8, Math.max(0.7, Math.exp(normal * 0.28)));
 }
 
 /* -------------------------------------------------------------------------
@@ -248,8 +279,11 @@ export async function gate(providerId, { intent = 'chat', safe = true } = {}) {
     // under-report exactly the sessions that sent the most.
     const count = recentCount(record, now);
 
-    const base = intent === 'run' ? RUN_GAP_MS : CHAT_GAP_MS;
-    const read = Math.min(MAX_READ_MS, record.replyChars * READ_MS_PER_CHAR);
+    const run = intent === 'run';
+    const base = run ? RUN_GAP_MS : CHAT_GAP_MS;
+    const read = run
+      ? record.replyChars * READ_MS_PER_CHAR_RUN
+      : Math.min(MAX_READ_MS, record.replyChars * READ_MS_PER_CHAR);
 
     /**
      * Off means off — but not zero.
