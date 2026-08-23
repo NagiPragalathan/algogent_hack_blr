@@ -235,6 +235,22 @@
     0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent),
     var(--shadow-2);
 }
+/**
+ * …and only while the panel actually holds the keyboard.
+ *
+ * `:focus` survives the window losing focus, and `boot()` focuses the composer
+ * as the panel opens — so a panel nobody had clicked yet drew this lit box
+ * while every keystroke went to the omnibox. A ring that says "type here" has
+ * to be true, or the first thing anyone pastes lands somewhere else and the
+ * panel looks like it refused it. `bindPanelFocus` sets the class.
+ */
+body.unfocused .composer:focus-within {
+  outline: none;
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+}
+
 
 .send-btn {
   background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent-2) 55%, var(--accent)));
@@ -321,6 +337,22 @@
   animation:
     send-swap var(--dur-2) var(--ease-out),
     stop-ring 1.7s var(--ease) .2s infinite;
+}
+
+/**
+ * Stop has been asked for and the worker has not confirmed it yet.
+ *
+ * A distinct state rather than a quieter one: the run genuinely is still going
+ * for a second or two after the press — the loop only tests for cancellation
+ * between steps — and the panel used to claim otherwise, which is what left a
+ * question typed into a released composer coming back "An agent run is already
+ * going. Stop it first." The ring stops travelling because nothing more is
+ * being asked for; the button stays live because pressing it again is the way
+ * out of a worker that never answers.
+ */
+.send-btn.stop.stopping:not([hidden]) {
+  animation: send-swap var(--dur-2) var(--ease-out);
+  background: color-mix(in srgb, var(--danger) 55%, var(--bg));
 }
 
 /**

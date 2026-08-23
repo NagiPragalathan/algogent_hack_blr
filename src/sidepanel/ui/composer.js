@@ -2,7 +2,14 @@ import { els } from '../core/dom.js';
 import { state, uid } from '../core/state.js';
 import { send } from '../core/port.js';
 import { saveThread } from '../core/sessions.js';
-import { trackRequest, forgetRequest, liveIn, requestTurn } from '../core/runs.js';
+import {
+  trackRequest,
+  forgetRequest,
+  liveIn,
+  requestTurn,
+  markStopping,
+  isStopping
+} from '../core/runs.js';
 import { setHint } from './hint.js';
 import { targetProviders, setProviderBusy } from './providers.js';
 import { renderThread } from './thread.js';
@@ -33,9 +40,18 @@ export function autosize() {
   el.style.overflowY = needed > INPUT_MAX_HEIGHT ? 'auto' : 'hidden';
 }
 
-export function setBusy(busy) {
+export function setBusy(busy, stopping = false) {
   els.send.hidden = busy;
   els.stop.hidden = !busy;
+  /**
+   * Stop pressed, worker not finished — a real state, and a different one.
+   *
+   * Left enabled on purpose. The grace timer in `stopEverything` is the escape
+   * from a worker that never answers, and a second press is the faster one; a
+   * disabled button in a panel that is not letting go reads as a hang.
+   */
+  els.stop.classList.toggle('stopping', busy && stopping);
+  els.stop.title = busy && stopping ? 'Stopping — press again to let go' : 'Stop';
   // Left editable on purpose: the next question can be typed while this one runs.
   els.input.disabled = false;
 
@@ -68,7 +84,7 @@ export function syncComposer() {
   const { chat, agent } = liveIn(state.session?.id ?? null);
   state.busyReq = chat;
   state.agentRunId = agent;
-  setBusy(Boolean(chat || agent));
+  setBusy(Boolean(chat || agent), Boolean(agent && isStopping(agent)));
 }
 
 /**
@@ -279,6 +295,14 @@ export function finishIfIdle(turnId) {
 }
 
 /**
+ * How long the panel waits for the worker to confirm a stop before letting go
+ * of the composer itself. Comfortably longer than a run takes to unwind — the
+ * step in flight has to end and `pace.js` can hold a retry for a few seconds —
+ * and short enough not to read as a hang.
+ */
+const STOP_GRACE_MS = 10000;
+
+/**
  * The ■ button: stop what is running in THIS conversation.
  *
  * Scoped deliberately. The button sits under one chat's composer and its label
@@ -288,8 +312,39 @@ export function finishIfIdle(turnId) {
  */
 export function stopEverything() {
   if (state.agentRunId) {
-    send({ type: 'AGENT_STOP', runId: state.agentRunId });
-    forgetRequest(state.agentRunId);
+    const runId = state.agentRunId;
+
+    /**
+     * Asked once already and it has not landed. Let go locally.
+     *
+     * The worker is the authority on whether a run is over and this is the
+     * panel overruling it, so it is deliberately the SECOND press rather than
+     * the first: a run that is unwinding normally clears in a few seconds and
+     * the honest thing to show meanwhile is that it is stopping. What this
+     * exists for is the worker that never answers — killed mid-run, or a loop
+     * parked somewhere `signal.cancelled` is not tested — where the alternative
+     * is a composer locked until the panel is reloaded.
+     */
+    if (isStopping(runId)) {
+      forgetRequest(runId);
+      syncComposer();
+      return;
+    }
+
+    send({ type: 'AGENT_STOP', runId });
+    /**
+     * NOT `forgetRequest` — see `markStopping`. The run really is still going
+     * for a few seconds after this, and saying otherwise is what produced the
+     * "already going / Stop it first" dead end.
+     */
+    markStopping(runId);
+
+    // The same escape as the second press, for whoever presses once and waits.
+    setTimeout(() => {
+      if (!isStopping(runId)) return;
+      forgetRequest(runId);
+      syncComposer();
+    }, STOP_GRACE_MS);
   } else if (state.busyReq) {
     send({ type: 'CANCEL', reqId: state.busyReq });
     forgetRequest(state.busyReq);

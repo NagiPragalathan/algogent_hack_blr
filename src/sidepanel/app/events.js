@@ -55,6 +55,7 @@ export function bindEvents() {
   bindHistoryDrawer();
   bindOverflowMenu();
   bindDismissals();
+  bindPanelFocus();
   bindBrowserEvents();
 }
 
@@ -404,18 +405,70 @@ function bindDropAndPaste() {
   });
 
   /**
-   * A pasted picture becomes an attachment; pasted text stays text.
+   * A pasted picture becomes an attachment; pasted text goes in the composer —
+   * wherever in the panel the paste actually landed.
    *
-   * Only `preventDefault` when there are files, or pasting an ordinary
-   * paragraph into the composer would stop working — the one thing this panel
-   * is for.
+   * Bound on the document rather than on the textarea, for the same reason the
+   * drop is: what people aim at is "the panel". A click on the thread, on a
+   * button, or on one of the empty-state cards leaves `document.body` holding
+   * the focus, and Chrome dispatches the paste THERE — so the textarea's own
+   * listener never ran and Ctrl+V did nothing whatsoever, with the composer
+   * still wearing the focus ring `boot()` gave it. That reads as a panel that
+   * refuses pastes, and the next move it invites is to try somewhere that does
+   * not refuse them: the address bar, which is where the reported task text
+   * ended up, three times over.
+   *
+   * A field that can take the paste itself keeps it — a sheet's filter, the
+   * skill editor's prompt. The composer is the one exception and only for
+   * files, because `preventDefault` on its text would break pasting a paragraph
+   * into the box this panel exists for.
    */
-  els.input.addEventListener('paste', async (e) => {
+  document.addEventListener('paste', async (e) => {
+    const inComposer = e.target === els.input;
+    if (isEditable(e.target) && !inComposer) return;
+
     const files = [...(e.clipboardData?.files || [])];
-    if (!files.length) return;
+    if (files.length) {
+      e.preventDefault();
+      await attachFiles(files);
+      return;
+    }
+
+    if (inComposer) return;
+
+    const text = e.clipboardData?.getData('text/plain') || '';
+    if (!text) return;
     e.preventDefault();
-    await attachFiles(files);
+    insertIntoComposer(text);
   });
+}
+
+/** A control that owns its own paste, and must keep it. */
+const isEditable = (node) =>
+  node instanceof HTMLElement &&
+  (node.isContentEditable || /^(input|textarea|select)$/i.test(node.tagName));
+
+/**
+ * Put text in the composer as though it had been typed there.
+ *
+ * `execCommand` rather than assigning `value`: it keeps the undo stack, it
+ * replaces a selection, and it fires `input` itself — which is where every
+ * piece of composer bookkeeping already lives (autosize, `syncTokens`, the ink
+ * layer, the '@' and '/' menus). Reproducing that list here is how the two ends
+ * drift apart, and the drift would be silent: a badge painted for a token the
+ * state no longer holds. The assignment below is the fallback for the day the
+ * deprecated call goes, and dispatches `input` by hand for the same reason.
+ */
+function insertIntoComposer(text) {
+  els.input.focus();
+  if (document.execCommand('insertText', false, text)) return;
+
+  const el = els.input;
+  const from = el.selectionStart ?? el.value.length;
+  const to = el.selectionEnd ?? from;
+  el.value = el.value.slice(0, from) + text + el.value.slice(to);
+  el.selectionStart = el.selectionEnd = from + text.length;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
@@ -561,6 +614,38 @@ function bindDismissals() {
       state.mentionAt = null;
     }
   });
+}
+
+/**
+ * The composer may only look focused while the panel really is focused.
+ *
+ * `:focus` outlives the window losing focus, and `boot()` focuses the composer
+ * the instant the panel opens — so a panel nobody has clicked yet draws a lit,
+ * ready-looking box while every keystroke goes to whatever the BROWSER has the
+ * focus on. Opening the panel from the toolbar leaves that on the omnibox,
+ * which is how a task meant for the composer ends up in the address bar with
+ * the composer glowing beside it, three pastes deep. Nothing here can take the
+ * focus back from the omnibox; what it can do is stop claiming to hold it.
+ *
+ * The other half is that once a click does bring the panel forward, the caret
+ * goes back to the composer — but only if nothing inside the panel has taken
+ * it. `document.body` holding the focus is a panel you can neither type into
+ * nor paste into, and it is what a click on the thread or on the background
+ * leaves behind. A field in a sheet, or the skill editor's prompt, is left
+ * alone: this fires on the way back from an alt-tab too, and a caret that jumps
+ * out of the form you were filling in is worse than the ring ever was.
+ */
+function bindPanelFocus() {
+  const paint = () => document.body.classList.toggle('unfocused', !document.hasFocus());
+
+  window.addEventListener('blur', paint);
+  window.addEventListener('focus', () => {
+    paint();
+    const active = document.activeElement;
+    if (!active || active === document.body) els.input.focus();
+  });
+
+  paint();
 }
 
 function bindBrowserEvents() {

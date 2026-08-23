@@ -1,0 +1,138 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>paste fixture</title></head>
+<body>
+<script>
+  // The panel talks to a worker that does not exist here. Nothing under test
+  // sends anything, so the stub only has to be complete enough for bindEvents
+  // to register every listener.
+  window.chrome = {
+    runtime: {
+      connect: () => ({
+        postMessage() {},
+        onMessage: { addListener() {} },
+        onDisconnect: { addListener() {} },
+        disconnect() {}
+      }),
+      sendMessage: () => Promise.resolve(),
+      onMessage: { addListener() {} },
+      getURL: (p) => p,
+      id: 'test'
+    },
+    storage: {
+      local: { get: (k, cb) => (cb ? cb({}) : Promise.resolve({})), set: () => Promise.resolve() },
+      session: { get: () => Promise.resolve({}), set: () => Promise.resolve() },
+      onChanged: { addListener() {} }
+    },
+    tabs: {
+      query: () => Promise.resolve([]),
+      onActivated: { addListener() {} },
+      onUpdated: { addListener() {} }
+    },
+    sidePanel: { setOptions: () => Promise.resolve() }
+  };
+</script>
+<script type="module">
+  // The real markup and the real stylesheet, so `dom.js` finds the real ids and
+  // the rule being asserted on is the one that ships.
+  const html = await (await fetch('/src/sidepanel/sidepanel.html')).text();
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  document.head.insertAdjacentHTML(
+    'beforeend',
+    '<link rel="stylesheet" href="/src/sidepanel/sidepanel.css">'
+  );
+  document.body.innerHTML = doc.body.innerHTML;
+
+  const { bindEvents } = await import('/src/sidepanel/app/events.js');
+  bindEvents();
+
+  window.__ready = true;
+</script>
+
+<script type="module">
+  /**
+   * Self-checking. Open this page and read the box.
+   *
+   * What is under test is where a paste LANDS. The reported bug is a panel that
+   * takes no pastes at all — the listener was on the textarea, a click anywhere
+   * else in the panel leaves `document.body` holding the focus, and Chrome
+   * dispatches the paste there. A fake DOM cannot reproduce that: it has no
+   * focus model and no default action to prevent.
+   */
+  while (!window.__ready) await new Promise((r) => setTimeout(r, 50));
+
+  const input = document.getElementById('input');
+  const results = [];
+  const ok = (name, cond, extra) => results.push({ name, pass: Boolean(cond), extra });
+
+  /** A paste carrying text, aimed at one element. */
+  function pasteOn(target, text) {
+    const data = new DataTransfer();
+    data.setData('text/plain', text);
+    const event = new ClipboardEvent('paste', {
+      clipboardData: data,
+      bubbles: true,
+      cancelable: true
+    });
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  // 1. The failure itself: focus on the body, which is what a click on the
+  //    thread or on the empty-state cards leaves behind.
+  input.value = '';
+  document.body.focus();
+  const onBody = pasteOn(document.body, 'open my gmail, read the top 5 unread messages');
+  await new Promise((r) => setTimeout(r, 0));
+  ok(
+    'a paste on the panel body reaches the composer',
+    input.value === 'open my gmail, read the top 5 unread messages',
+    JSON.stringify(input.value)
+  );
+  ok('and the default is taken over', onBody.defaultPrevented);
+
+  // 2. …and it is a real edit, not an assignment: the composer's own `input`
+  //    listener is what sizes the box and re-derives the badges.
+  ok('the box was resized by it', input.style.height && input.style.height !== '0px', input.style.height);
+
+  // 3. Text aimed at the composer is left completely alone — intercepting it is
+  //    how pasting a paragraph into the box this panel exists for stops working.
+  input.value = '';
+  input.focus();
+  const onInput = pasteOn(input, 'ordinary text');
+  ok('a paste in the composer keeps its own default', !onInput.defaultPrevented);
+
+  // 4. So is a field that owns its paste. Typing a filter is not a question.
+  const filter = document.getElementById('tab-filter');
+  const onField = pasteOn(filter, 'workday');
+  ok('a sheet field keeps its own paste', !onField.defaultPrevented && input.value === '',
+     JSON.stringify(input.value));
+
+  // 5. The composer may not claim the focus ring while the panel has no focus.
+  //    `boot()` focuses the composer as the panel opens, and `:focus` outlives
+  //    the window losing focus — so without this the box glows while every
+  //    keystroke goes to the omnibox.
+  const marked = document.body.classList.contains('unfocused');
+  ok('the unfocused mark tracks the real focus', marked === !document.hasFocus(),
+     'hasFocus=' + document.hasFocus() + ' marked=' + marked);
+
+  const composer = document.getElementById('composer');
+  input.focus();
+  document.body.classList.add('unfocused');
+  const dimmed = getComputedStyle(composer).boxShadow;
+  document.body.classList.remove('unfocused');
+  const lit = getComputedStyle(composer).boxShadow;
+  ok('and the glow goes with it', dimmed !== lit, dimmed + ' vs ' + lit);
+
+  window.__results = results;
+  const box = document.createElement('pre');
+  box.style.cssText =
+    'position:fixed;top:0;right:0;background:#111;color:#eee;padding:12px;font:12px monospace;z-index:9';
+  const NL = '\n';
+  const line = (r) => (r.pass ? 'ok   ' : 'FAIL ') + r.name + (r.pass ? '' : ' — ' + r.extra);
+  const tally = results.filter((r) => r.pass).length + '/' + results.length + ' passed';
+  box.textContent = results.map(line).join(NL) + NL + NL + tally;
+  document.body.append(box);
+</script>
+</body>
+</html>

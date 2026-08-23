@@ -1,0 +1,143 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>send-into-a-live-generation</title></head>
+<body>
+<!--
+  An arena.ai-shaped chat UI: no streaming marker anywhere, and ONE button that
+  sends when idle and stops when generating — which is what most chat UIs do and
+  what arena does. The aria-label never changes, so the `stop` selector in the
+  provider config can never match it and `isStreaming()` is false throughout.
+
+  The failure this reproduces: the adapter believes nothing is generating,
+  clicks "send", and the click lands on the stop control. The generation dies,
+  the question is never delivered, and every layer reports success.
+-->
+<ol id="thread" style="list-style:none"></ol>
+<form id="form" onsubmit="return false">
+  <textarea placeholder="Ask followup..."></textarea>
+  <button type="button" aria-label="Send message" id="go">go</button>
+</form>
+
+<script>
+  const thread = document.getElementById('thread');
+  const go = document.getElementById('go');
+
+  window.__log = [];
+  let timer = null;
+  let node = null;
+
+  function addReply() {
+    const li = document.createElement('li');
+    const div = document.createElement('div');
+    div.className = 'prose';
+    li.append(div);
+    thread.append(li);
+    return div;
+  }
+
+  /** Write a reply out slowly, the way a real one arrives. */
+  window.__generate = (words) => {
+    node = addReply();
+    let i = 0;
+    timer = setInterval(() => {
+      if (i >= words.length) { clearInterval(timer); timer = null; window.__log.push('finished'); return; }
+      node.textContent += (i ? ' ' : '') + words[i++];
+    }, 120);
+  };
+
+  go.addEventListener('click', () => {
+    if (timer) {
+      // Generating: this control is the STOP button. Exactly arena's behaviour.
+      clearInterval(timer);
+      timer = null;
+      node.textContent += ' [Generation stopped]';
+      window.__log.push('STOPPED by send click');
+      return;
+    }
+    const ta = document.querySelector('textarea');
+    const text = ta.value;
+    if (!text.trim()) { window.__log.push('send with empty box'); return; }
+    ta.value = '';
+    const li = document.createElement('li');
+    li.className = 'bg-surface-raised';
+    const d = document.createElement('div');
+    d.className = 'prose';
+    d.textContent = text;
+    li.append(d);
+    thread.append(li);
+    window.__log.push('SENT: ' + text.slice(0, 40));
+    window.__generate(['Answer', 'to', 'the', 'new', 'question.']);
+  });
+
+  // --- the stubs the adapter needs -----------------------------------------
+  window.__events = [];
+  let handler = null;
+  window.chrome = {
+    runtime: {
+      onMessage: { addListener: (fn) => { handler = fn; } },
+      sendMessage: (m) => { window.__events.push(m); return Promise.resolve(); },
+      id: 'test'
+    },
+    storage: { local: { get: (_k, cb) => cb({}) }, onChanged: { addListener() {} } }
+  };
+  window.__send = (msg) => new Promise((r) => handler({ target: 'adapter', ...msg }, {}, r));
+
+  window.__SIDEBAR_AI = {
+    settings: { readyTimeoutMs: 8000, responseTimeoutMs: 20000, stabilityMs: 700 },
+    provider: {
+      id: 'arena', name: 'Arena AI', submitWith: 'click',
+      selectors: {
+        composer: ['textarea'],
+        send: ['button[aria-label="Send message"]'],
+        stop: ['button[aria-label*="Stop" i]'],   // never matches — the real gap
+        streaming: [],
+        assistant: ['div.prose:not(.bg-surface-raised > *)'],
+        user: [],
+        attach: [], loggedOut: [], ready: ['textarea']
+      }
+    }
+  };
+</script>
+<script src="/src/adapters/adapter.js"></script>
+
+<script type="module">
+  // Self-checking, so this is a test rather than something to squint at.
+  // Open http://localhost:PORT/tests/panel/arena-send.html and read the page.
+  const results = [];
+  const ok = (name, cond, extra) => results.push({ name, pass: Boolean(cond), extra });
+
+  window.__generate('The previous answer is still being written out word by word'.split(' '));
+  await new Promise((r) => setTimeout(r, 300));
+
+  await window.__send({
+    type: 'SUBMIT',
+    reqId: 'q1',
+    text: 'Open Wikipedia and search for Artificial Intelligence.'
+  });
+  await new Promise((r) => setTimeout(r, 9000));
+
+  const log = window.__log;
+  const states = window.__events.map((e) => e.state).filter(Boolean);
+  const done = window.__events.filter((e) => e.state === 'done').pop();
+  const first = document.querySelector('#thread li')?.textContent || '';
+
+  ok('the send click did not land on the stop control',
+    !log.includes('STOPPED by send click'), log.join(' | '));
+  ok('the previous answer survived intact',
+    !first.includes('[Generation stopped]'), first);
+  ok('the previous generation finished BEFORE ours was sent',
+    log.indexOf('finished') === 0 && log.some((l) => l.startsWith('SENT:')), log.join(' | '));
+  ok('the question was delivered', states.includes('submitted'));
+  ok('an answer came back', done?.text === 'Answer to the new question.', done?.text);
+
+  window.__results = results;
+  const box = document.createElement('pre');
+  box.style.cssText = 'position:fixed;top:0;right:0;background:#111;color:#eee;padding:12px;font:12px monospace;z-index:9';
+  const NL = '\n';
+  const line = (r) => (r.pass ? 'ok   ' : 'FAIL ') + r.name + (r.pass ? '' : ' — ' + r.extra);
+  const tally = results.filter((r) => r.pass).length + '/' + results.length + ' passed';
+  box.textContent = results.map(line).join(NL) + NL + NL + tally;
+  document.body.append(box);
+</script>
+</body>
+</html>

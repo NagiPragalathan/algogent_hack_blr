@@ -26,7 +26,7 @@ import { emit, EVENTS } from './bus.js';
  * survived a reload would only ever describe requests that can never land.
  */
 
-/** requestId -> { sessionId, kind: 'chat' | 'agent' } */
+/** requestId -> { sessionId, kind: 'chat' | 'agent', stopping?: boolean } */
 const owners = new Map();
 
 export function trackRequest(id, sessionId, kind = 'chat') {
@@ -39,6 +39,34 @@ export function forgetRequest(id) {
   if (!owners.delete(id)) return;
   emit(EVENTS.RUNS_CHANGED);
 }
+
+/**
+ * Stop has been asked for, and the worker has not confirmed it yet.
+ *
+ * The old `stopEverything` called `forgetRequest` on the spot, which released
+ * the composer instantly — and that is a claim the panel is in no position to
+ * make. A run only tests `signal.cancelled` BETWEEN steps, and the step in
+ * flight is a provider round trip, so for several seconds after the button is
+ * pressed the run is genuinely still going: the curtain is still up, its tabs
+ * are still grouped, and the worker still refuses a new one. The panel showed a
+ * Send button through all of it, and the question typed into it came back "An
+ * agent run is already going. Stop it first." — pointing at a button that had
+ * just disappeared.
+ *
+ * So the run stays live here and the composer stays locked; only AGENT_FINISHED
+ * clears it, which is the same message that ends an ordinary run. What changes
+ * is the LABEL — see `setBusy` — because "stopping" and "running" are different
+ * news and a Stop button that does nothing when pressed twice is its own bug.
+ */
+export function markStopping(id) {
+  const owner = owners.get(id);
+  if (!owner || owner.stopping) return;
+  owner.stopping = true;
+  emit(EVENTS.RUNS_CHANGED);
+}
+
+/** Has Stop already been sent for this one? */
+export const isStopping = (id) => Boolean(owners.get(id)?.stopping);
 
 /**
  * The session a request belongs to, wherever it currently lives.

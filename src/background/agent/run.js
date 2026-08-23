@@ -34,6 +34,49 @@ let agentRun = null;
  */
 
 export const isAgentRunning = () => agentRun !== null;
+
+/** How long a new run waits for one that has already been told to stop. */
+const HANDOVER_MS = 8000;
+
+/**
+ * Wait out a run that is on its way down, then take the slot from it.
+ *
+ * A cancelled run is not a live one. `cancel()` sets `signal.cancelled` and
+ * everything the loop does from that point is a no-op — but the slot is only
+ * given up by the `finally`, which is several seconds away, because the step in
+ * flight is a provider round trip and `signal.cancelled` is only tested between
+ * steps. The panel meanwhile released the composer the instant Stop was
+ * pressed, so that window is one in which typing is invited and then refused:
+ * the next question came back "An agent run is already going. Stop it first.",
+ * naming a button that is not on screen, in a chat that shows nothing running.
+ * Measured from the report — the curtain still up on the old page, the panel on
+ * a brand new chat, and no way out but reloading the extension.
+ *
+ * So the two cases are separated. A LIVE run still refuses: that is the guard
+ * doing its job, and two of them would fight over one provider conversation. A
+ * STOPPING one is waited for and then taken over whether or not it has finished
+ * unwinding, because nothing it has left to do can affect anything.
+ * `startAgentRun` stamps the slot with its own run object and the `finally`
+ * only clears what it still owns, so the old loop cannot pull the new one's
+ * slot out from under it.
+ */
+async function waitForStoppingRun() {
+  if (!agentRun?.cancelled) return false;
+
+  const until = Date.now() + HANDOVER_MS;
+  while (agentRun && Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  return true;
+}
+
+/** Enough of the task to recognise which run is meant, on one line. */
+const firstLine = (task) => {
+  const line = String(task || '').trim().split('\n')[0];
+  return line.length > 60 ? `${line.slice(0, 57)}…` : line;
+};
+
 /**
  * The answer, which is not always yes or no.
  *
@@ -55,14 +98,73 @@ export async function startAgentRun({ msg, settings, providers, post }) {
    * the panel spinning on a run that never began, with no way back but a reload.
    */
   const refuse = (error) => {
+    // The slot is claimed below, before any of the awaits these refusals come
+    // from — so every one of them has to hand it back or the next run queues
+    // behind a run that never started.
+    release();
     post({ type: 'AGENT_ERROR', runId: msg.runId, error });
     post({ type: 'AGENT_FINISHED', runId: msg.runId });
   };
 
-  if (agentRun) {
-    refuse('An agent run is already going. Stop it first.');
+  /**
+   * Deliberately not `refuse` — that releases the slot, and this run never
+   * held it. See `waitForStoppingRun` for why a stopping run is taken over.
+   */
+  if (agentRun && !(await waitForStoppingRun())) {
+    const what = agentRun.task ? ` — “${firstLine(agentRun.task)}”` : '';
+    post({
+      type: 'AGENT_ERROR',
+      runId: msg.runId,
+      error:
+        `An agent run is already going${what}. Open the chat it belongs to from ` +
+        '⏱ Recent chats and press ■ there, or wait for it to finish.'
+    });
+    post({ type: 'AGENT_FINISHED', runId: msg.runId });
     return;
   }
+
+  /**
+   * The slot, claimed before the first await rather than beside the loop.
+   *
+   * `agentRun` used to be assigned three awaits below this check, and one of
+   * those is `resolveAgentTab`, which can navigate a tab and then wait five
+   * seconds for it to settle. Two AGENT_RUNs arriving inside that window both
+   * passed the check and both ran; the first to finish nulled the slot and
+   * posted AGENT_FINISHED — releasing the panel — while the second was still
+   * driving the page. Claimed here, the check and the claim are one synchronous
+   * step and nothing can land between them.
+   */
+  const signal = { cancelled: false };
+  let approve = null;
+  const run = {
+    // Named in the refusal above, so "which run?" is answerable from the chat
+    // that is refusing rather than only from the one that is running.
+    task: msg.task || '',
+    cancelled: false,
+    signal,
+    resolveConfirm: (answer) => approve?.(answer),
+    cancel() {
+      run.cancelled = true;
+      signal.cancelled = true;
+      approve?.({ ok: false, reply: '' });
+      /**
+       * Their page back NOW, not when the loop unwinds.
+       *
+       * `releaseControl` is in the `finally`, which is a provider round trip
+       * away — so for all of those seconds the curtain stayed up on a run the
+       * user had already stopped, which is indistinguishable from Stop not
+       * working. It is idempotent (see `page.js`), so the `finally` calling it
+       * again costs nothing.
+       */
+      releaseControl().catch(() => {});
+    }
+  };
+  agentRun = run;
+
+  /** Let the slot go, but only if it is still ours. See the `finally`. */
+  const release = () => {
+    if (agentRun === run) agentRun = null;
+  };
 
   const provider = providers[msg.providerId] || providers[PROVIDER_ORDER[0]];
   if (!provider) {
@@ -119,17 +221,6 @@ export async function startAgentRun({ msg, settings, providers, post }) {
       note: `Nothing readable was open, so the run starts from ${tab.url || AGENT_START_URL}.`
     });
   }
-
-  const signal = { cancelled: false };
-  let approve = null;
-  agentRun = {
-    signal,
-    resolveConfirm: (ok) => approve?.(ok),
-    cancel() {
-      signal.cancelled = true;
-      approve?.({ ok: false, reply: '' });
-    }
-  };
 
   // Held for the whole run, not just each provider call — the gaps between
   // steps (page settling, waiting on your approval) are worker-idle too.
@@ -434,13 +525,22 @@ export async function startAgentRun({ msg, settings, providers, post }) {
   } catch (err) {
     post({ type: 'AGENT_ERROR', runId: msg.runId, error: String(err?.message || err) });
   } finally {
-    agentRun = null;
+    /**
+     * Another run holds this slot now — see `waitForStoppingRun`. Everything
+     * below then belongs to IT: nulling the slot would leave the live run
+     * unguarded, and `releaseControl` would take down its curtain and scatter
+     * its tab group while it was still working. AGENT_FINISHED is still posted,
+     * because it carries this run's id and is what releases this chat's
+     * composer.
+     */
+    const superseded = agentRun !== run;
+    if (!superseded) agentRun = null;
     releaseKeepAlive();
     // Here and nowhere else: this `finally` is the only thing that runs on
     // every path out of a run — finished, cancelled, thrown, or a preflight
     // refusal. A curtain left up is a page the user cannot click, with nothing
     // running behind it to explain why.
-    await releaseControl();
+    if (!superseded) await releaseControl();
     post({ type: 'AGENT_FINISHED', runId: msg.runId });
   }
 }

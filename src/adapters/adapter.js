@@ -1055,12 +1055,47 @@
       .trim();
   }
 
+  /**
+   * The thread, oldest first — whatever order the DOM happens to be in.
+   *
+   * `pickAll` answers in document order, and for most providers that is also
+   * chronological. arena.ai renders its thread into an
+   * `<ol class="… flex-col-reverse">`: the newest message is the FIRST child
+   * and CSS puts it at the bottom, so document order is reverse chronological —
+   * and `nodes[nodes.length - 1]`, which is "the latest reply" everywhere in
+   * this file, is the OLDEST one.
+   *
+   * That was already known here: it is why arena's `user` selector is empty,
+   * because the anchored branch of `freshText` looks for assistant nodes
+   * FOLLOWING the question and in a reversed thread they precede it. What the
+   * note beside that missed is that the FALLBACK has the same dependency —
+   * "newest assistant text" is `nodes.length - 1`, which is document order too.
+   *
+   * Measured: every turn of an arena run came back "Hello! How can I help you
+   * today?", the first reply in the conversation, while the answer actually on
+   * screen was a perfectly good JSON action. Nothing anywhere reports that as a
+   * failure — the text IS a real reply, it just belongs to a question from ten
+   * minutes ago — so the loop read it as the model answering in prose instead
+   * of acting, pushed back, got the same stale text again, and finished in
+   * three steps having touched nothing.
+   *
+   * Declared per provider rather than sniffed: `getComputedStyle` on a thread
+   * container is a layout read on the reply loop's hot path, and
+   * `flex-col-reverse` is only one of the ways a site can do this.
+   *
+   * A reversed thread must still keep `user: []`. This puts the ARRAY in
+   * chronological order; it cannot reorder the document, so the
+   * `compareDocumentPosition` branch stays wrong and has to be left unreachable.
+   */
+  const inThreadOrder = (nodes) =>
+    cfgOf().provider?.reversedThread ? nodes.reverse() : nodes;
+
   function assistantNodes() {
-    return pickAll('assistant').filter((el) => el.getClientRects().length > 0);
+    return inThreadOrder(pickAll('assistant').filter((el) => el.getClientRects().length > 0));
   }
 
   function userMessageNodes() {
-    return pickAll('user').filter((el) => el.getClientRects().length > 0);
+    return inThreadOrder(pickAll('user').filter((el) => el.getClientRects().length > 0));
   }
 
   function nodeText(el) {
@@ -1084,11 +1119,75 @@
    */
   const FINGERPRINT_CHARS = 80;
 
+  /**
+   * Has a streaming marker EVER matched in this tab?
+   *
+   * Only used to decide whether the growth sample below is worth paying for.
+   * A provider whose markers work needs no second opinion; one whose markers
+   * have never once fired has no streaming signal at all, and the difference
+   * cannot be known from the config — arena.ai declares a `stop` selector that
+   * simply does not match its button.
+   */
+  let streamingMarkerSeen = false;
+
   function isStreaming() {
-    if (pick('streaming')) return true;
-    const stop = pick('stop');
-    if (isInteractable(stop)) return true;
+    if (pick('streaming') || isInteractable(pick('stop'))) {
+      streamingMarkerSeen = true;
+      return true;
+    }
     return false;
+  }
+
+  /** How long to watch for a reply still growing. */
+  const GROWTH_SAMPLE_MS = 400;
+
+  /**
+   * How long the newest reply is, as a number that goes up while it is written.
+   *
+   * The signal of last resort for "is one still being written", and the one
+   * nothing can take away: `isStreaming` reads two selectors, and a provider
+   * that declares neither — or declares a `stop` selector that stops matching
+   * when the site relabels its button — has no streaming signal whatsoever.
+   *
+   * That is not cosmetic. `isStreaming` is what keeps the next question out of
+   * a composer whose send button is CURRENTLY a stop button, and on most chat
+   * UIs those are one control in one place. So sending into a live generation
+   * does not queue the question, it CANCELS the answer: measured on arena.ai,
+   * where the turn showed "Generation stopped" with the question never sent,
+   * and the run then waited out its response timeout for a reply to something
+   * nobody had asked.
+   *
+   * `textContent.length` rather than `nodeText`: this runs before every send,
+   * and building markdown for a whole node to compare two numbers is waste —
+   * and unlike `innerText` it forces no layout on a page that may be mid-stream.
+   * `-1` for an empty thread, which is not a length and must not compare equal
+   * to one.
+   */
+  function replySize() {
+    const nodes = assistantNodes();
+    const last = nodes[nodes.length - 1];
+    return last ? last.textContent.length : -1;
+  }
+
+  /**
+   * Wait out a reply that is still growing but says nothing about it.
+   *
+   * Same shape as the settle rule on the reply side and for the same reason: a
+   * pause mid-generation is indistinguishable from an ending, so stability has
+   * to be seen more than once before it is believed.
+   */
+  async function waitForGrowthToStop(job) {
+    let seen = replySize();
+    let stable = 0;
+    const until = Date.now() + 60000;
+
+    while (stable < 2 && Date.now() < until) {
+      await sleep(GROWTH_SAMPLE_MS);
+      if (job.cancelled) return;
+      const now = replySize();
+      stable = now === seen ? stable + 1 : 0;
+      seen = now;
+    }
   }
 
   function isLoggedOut() {
@@ -1222,6 +1321,26 @@
       await waitFor(() => !isStreaming(), 60000, 300);
       if (job.cancelled) return;
       await sleep(300);
+    } else if (!streamingMarkerSeen && replySize() > 0) {
+      /**
+       * No marker has ever fired here, so ask the text instead.
+       *
+       * Costs one `GROWTH_SAMPLE_MS` sample per turn, and only on a thread
+       * that already has a reply in it and only for a provider whose markers
+       * have never once worked — so it is free for ChatGPT, Gemini and Claude
+       * after their first answer. Against a provider round trip of ten to forty
+       * seconds that is a rounding error, and what it buys is not losing the
+       * whole turn: see `replySize`.
+       */
+      const size = replySize();
+      await sleep(GROWTH_SAMPLE_MS);
+      if (job.cancelled) return;
+
+      if (replySize() !== size) {
+        await waitForGrowthToStop(job);
+        if (job.cancelled) return;
+        await sleep(300);
+      }
     }
 
     // 3. Remember what was already on screen. Only the fallback paths below

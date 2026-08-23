@@ -596,6 +596,84 @@ welcome is to send less of it. There is deliberately no reset button: the only
 reason to clear a cool-off is to go back at a provider that just asked to be left
 alone.
 
+**Stop must not claim more than it knows, and the slot must not outlive the
+run.** Two halves of one dead end: press Stop, get the composer back, type the
+next question, and be told *"An agent run is already going. Stop it first."* —
+naming a button that is no longer on screen, in a chat that shows nothing
+running. The panel was wrong first: `stopEverything` called `forgetRequest` on
+the spot, which is the panel asserting the run is over when all it has done is
+ask. A run only tests `signal.cancelled` BETWEEN steps and the step in flight is
+a provider round trip, so for several seconds afterwards it genuinely is still
+going — curtain up, tabs still grouped, worker still refusing a new one. So the
+run stays live in `core/runs.js` and only AGENT_FINISHED clears it; what changes
+is the LABEL (`markStopping`, `.stopping`), because "stopping" and "running" are
+different news. Two escapes exist for a worker that never answers — a second
+press, and a `STOP_GRACE_MS` timer — and both are deliberately the panel
+overruling the worker rather than its first move.
+
+The worker half is that `agentRun` was a slot no cancelled run ever gave back
+promptly. `waitForStoppingRun` separates the two cases: a LIVE run still refuses
+(two would fight over one provider conversation), a STOPPING one is waited for
+and then taken over whether or not it has finished unwinding, because nothing it
+has left to do can affect anything. That needs identity — the `finally` clears
+the slot and calls `releaseControl` only if it still OWNS them, or the old loop
+takes down the new run's curtain and scatters its tab group. The slot is also
+claimed BEFORE the first await now: `resolveAgentTab` can navigate a tab and
+wait five seconds for it to settle, and two AGENT_RUNs arriving in that window
+both passed the old check and both ran. `cancel()` releases the curtain
+immediately rather than leaving it up until the loop unwinds — Stop that leaves
+the page unclickable for another ten seconds is indistinguishable from Stop not
+working.
+
+**A provider with no streaming marker will have its own answer stopped by the
+next send.** `isStreaming` reads two selectors, and a provider that declares
+neither — or declares a `stop` selector that does not match its button, which is
+arena.ai — has no streaming signal at all. That is not cosmetic: `isStreaming`
+is what keeps the next question out of a composer whose send button is
+CURRENTLY a stop button, and on most chat UIs those are one control in one
+place. Sending into a live generation therefore does not queue the question, it
+CANCELS the answer. Reproduced in `tests/panel/arena-send.html`: the previous
+reply came out as "The previous answer [Generation stopped]", which is the
+string in the bug report. `replySize()` is the signal nothing can take away — a
+reply being written gets longer — and it is `textContent.length` rather than
+`nodeText` because this runs before every send and forces no layout. Paid only
+when `streamingMarkerSeen` is still false and the thread already has a reply in
+it, so it is free for ChatGPT, Gemini and Claude after their first answer.
+
+**arena.ai's newest message is the FIRST child, and "the latest reply" meant the
+oldest.** Its thread is an `<ol class="… flex-col-reverse">`, so CSS draws the
+first DOM child at the bottom and document order runs newest-to-oldest. Half of
+this was already known — it is why arena's `user` selector is empty, since the
+anchored branch of `freshText` wants assistant nodes FOLLOWING the question and
+in a reversed thread they precede it. What the note beside that missed is that
+the FALLBACK has the same dependency: "newest assistant text" is
+`nodes[nodes.length - 1]`, which is document order too. So every turn of an
+arena run came back "Hello! How can I help you today?", the first reply in the
+conversation, while the answer on screen was a perfectly good JSON action.
+Nothing reports that as a failure — the text IS a real reply, it just belongs to
+a question from ten minutes ago — so the loop read it as answering in prose
+instead of acting, pushed back, got the same stale text, and finished in three
+steps having touched nothing. `reversedThread` in `providers/config.js` and
+`inThreadOrder` in `adapter.js` are the fix, declared per provider rather than
+sniffed because `getComputedStyle` on a thread container is a layout read on the
+reply loop's hot path. A reversed thread must still keep `user: []`: the array
+can be reordered, the document cannot, so the `compareDocumentPosition` branch
+stays wrong and has to be left unreachable.
+
+**A placeholder in the shape of a value gets copied.** The prompt's first
+example carried `{"thought":"one short line on why", …}` and a model asked for a
+JSON object returned exactly that. Measured: the task was "open my gmail, read
+the top 5 unread messages" and the reply was that thought verbatim with
+`"action":"click","id":12` — "I'm Feeling Lucky" on the Google homepage the run
+had just opened, landing it on Google Doodles. A model that has copied the field
+description instead of filling it in has not reasoned about the action either,
+so the empty thought and the wrong click are one failure. Every example in
+`protocol.js` now carries a real thought. The same run is why the prompt says to
+`navigate` to a site the task NAMES rather than hunting for it through links:
+the element list is a strong pull, it is the concrete thing in front of the
+model, and nothing said an address is the shorter road.
+
+
 **Known and pre-existing: a run whose transport changes mid-run splits its
 thread.** `directRunnable` decides once, but any per-turn decline — an expired
 session, and now a cool-off or a budget stand-down that lands mid-run — sends
@@ -1903,11 +1981,48 @@ is hard to hit while dragging — and counts `dragenter`/`dragleave` depth,
 because those fire per element crossed and watching `dragleave` alone flickers
 the overlay on every inner border. The overlay is `body::after` for the same
 reason: a real element appearing under the pointer mid-drag fires `dragleave`
-on what it covers. Paste only calls `preventDefault` when there are files, or
-pasting a paragraph into the composer stops working. And the sort by extension
-gets a MIME fallback: a clipboard image is a `File` with no name at all, so a
-name-only test sends a PNG down the text road and `file.text()` attaches a page
-of replacement characters.
+on what it covers. Paste never calls `preventDefault` on text the composer or a
+sheet field is already going to receive, or pasting a paragraph into the box
+this panel exists for stops working. And the sort by extension gets a MIME
+fallback: a clipboard image is a `File` with no name at all, so a name-only test
+sends a PNG down the text road and `file.text()` attaches a page of replacement
+characters.
+
+**A paste lands where the FOCUS is, and the panel was claiming a focus it did
+not have.** Two halves of one report — "when I paste it goes into Google, not
+into the sider" — with the pasted text sitting in the address bar and the
+composer glowing beside it, three attempts deep.
+
+The paste listener was on the textarea, so it only ever fired for a paste aimed
+at the textarea. A click on the thread, on a button, or on one of the
+empty-state cards leaves `document.body` holding the focus, and Chrome
+dispatches the paste THERE — no listener, no default action worth anything, and
+Ctrl+V does nothing at all. Nothing on screen says why, so the reasonable next
+move is to try it somewhere that does work, which is the omnibox. It is now
+bound on the document like the drop, for the same reason the drop is: what
+people aim at is "the panel". A field that owns its paste keeps it — a sheet
+filter, the skill editor's prompt — and the composer keeps its text and gives up
+only its files, which is exactly the old behaviour. Everything else goes in the
+composer through `insertIntoComposer`, which uses `execCommand('insertText')`
+rather than assigning `value`: that keeps the undo stack, respects a selection,
+and fires `input` itself, which is where autosize, `syncTokens`, the ink layer
+and the '@'/'/' menus already live. Rebuilding that list at a second call site
+is how the two ends drift, and the drift is silent — a badge painted for a token
+`state` no longer holds.
+
+The other half is that `:focus` OUTLIVES the window losing focus, and `boot()`
+focuses the composer the instant the panel opens. So a panel nobody has clicked
+draws a lit, ready-looking box while every keystroke goes to whatever the
+BROWSER has focus on — and opening the panel from the toolbar leaves that on the
+omnibox. The ring was not a symptom of the bug, it was most of the reason the
+bug is unreadable: it says "type here" while the keyboard is somewhere else.
+Nothing in JS can take focus back from the omnibox, and that limit is real — one
+click on the panel is still required. What `bindPanelFocus` can do is stop
+lying: `body.unfocused` gates the glow in `composer.css`, and on regaining focus
+the caret returns to the composer *only* when nothing inside the panel has taken
+it. Anything that has — a sheet field, the skill editor — is left alone, because
+this fires on the way back from an alt-tab too, and a caret that jumps out of
+the form you were filling in is worse than the ring ever was.
 
 **Pointing at the page has two answers, and they are not interchangeable.**
 `PICK_ELEMENT` sends what an element *says*; `PICK_REGION` sends what a region
@@ -2270,3 +2385,26 @@ Do not claim something works because it parses.
 need to reserch for usecases 
 dashbord access
 all of the dats should comes from suflum only we dont stoe any of the data in our db
+## Browser fixtures
+
+`tests/panel/*.html` are self-checking pages: serve the repo over http and open
+one, and a box in the corner reports pass/fail. They exist because the failures
+they cover are timing and layout, which a fake DOM cannot reproduce.
+
+```
+node -e "const h=require('http'),f=require('fs'),p=require('path'),t={'.html':'text/html','.js':'text/javascript','.css':'text/css'};h.createServer((q,s)=>{const x=p.join(process.cwd(),decodeURIComponent(q.url.split('?')[0]));f.readFile(x,(e,d)=>{if(e){s.writeHead(404);return s.end()}s.writeHead(200,{'content-type':t[p.extname(x)]||'text/plain'});s.end(d)})}).listen(8742)"
+```
+
+- `stop.html` — Stop keeps the composer locked until the worker confirms, and
+  both escapes work. ~15s, because the grace timer is part of what is tested.
+- `arena-send.html` — a chat UI with no streaming marker whose send button is
+  also its stop button. Proves the next question does not kill the previous
+  answer.
+- `arena-reversed.html` — a `flex-col-reverse` thread. Add `?flat=1` to turn
+  `reversedThread` off and watch it return the first reply in the conversation,
+  which is the reported bug.
+- `curtain.html` — the agent's click blocker survives `agentHighlight: false`.
+- `paste.html` — where a paste lands. Proves a Ctrl+V that arrives with the body
+  focused reaches the composer, that a paste aimed at the composer or at a sheet
+  field is left alone, and that the composer stops glowing when the panel has no
+  focus. A fake DOM has neither a focus model nor a default action to prevent.

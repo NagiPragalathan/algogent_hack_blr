@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>curtain fixture</title></head>
+<body>
+  <h1>A page the agent is driving</h1>
+  <button id="victim">Do not press me</button>
+
+  <script>
+    // `agentHighlight` comes from storage; everything else the script touches is
+    // optional-chained, so this is the whole stub it needs.
+    const highlight = !new URLSearchParams(location.search).has('nohighlight');
+    window.__clicks = 0;
+    document.getElementById('victim').addEventListener('click', () => { window.__clicks++; });
+
+    let handler = null;
+    window.chrome = {
+      runtime: { onMessage: { addListener: (fn) => { handler = fn; } } },
+      storage: {
+        local: { get: (_k, cb) => cb({ settings: { agentHighlight: highlight } }) },
+        onChanged: { addListener: () => {} }
+      }
+    };
+    window.__send = (msg) =>
+      new Promise((resolve) => handler({ target: 'agent-page', ...msg }, {}, resolve));
+  </script>
+  <script src="/src/content/agent-page.js"></script>
+</body>
+</html>

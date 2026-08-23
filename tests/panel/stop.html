@@ -1,0 +1,107 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>stop fixture</title></head>
+<body>
+<div id="host"></div>
+<script>
+  // The panel talks to a worker that does not exist here. Everything it sends
+  // is collected instead, which is the half of Stop under test: what goes out,
+  // and what the composer does before anything comes back.
+  window.__sent = [];
+  window.chrome = {
+    runtime: {
+      connect: () => ({
+        postMessage: (m) => window.__sent.push(m),
+        onMessage: { addListener() {} },
+        onDisconnect: { addListener() {} },
+        disconnect() {}
+      }),
+      sendMessage: () => Promise.resolve(),
+      onMessage: { addListener() {} },
+      getURL: (p) => p,
+      id: 'test'
+    },
+    storage: {
+      local: { get: (k, cb) => (cb ? cb({}) : Promise.resolve({})), set: () => Promise.resolve() },
+      session: { get: () => Promise.resolve({}), set: () => Promise.resolve() },
+      onChanged: { addListener() {} }
+    },
+    tabs: { query: () => Promise.resolve([]), onActivated: { addListener() {} } },
+    sidePanel: { setOptions: () => Promise.resolve() }
+  };
+</script>
+<script type="module">
+  // The real markup, so `dom.js` finds the real ids and the real classes are
+  // the ones being asserted on.
+  const html = await (await fetch('/src/sidepanel/sidepanel.html')).text();
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  document.body.innerHTML = doc.body.innerHTML;
+
+  const runs = await import('/src/sidepanel/core/runs.js');
+  const composer = await import('/src/sidepanel/ui/composer.js');
+  const { state } = await import('/src/sidepanel/core/state.js');
+
+  window.__t = { runs, composer, state };
+  window.__ready = true;
+</script>
+
+<script type="module">
+  // Self-checking. Open this page and read the box: Stop must NOT release the
+  // composer, because the run is genuinely still going for a few seconds after
+  // the press. Takes ~15s — the grace timer is part of what is being tested.
+  while (!window.__ready) await new Promise((r) => setTimeout(r, 50));
+  const { runs, composer, state } = window.__t;
+  const send = document.getElementById('send');
+  const stop = document.getElementById('stop');
+  const released = () => send.hidden === false;
+  const stopping = () => stop.classList.contains('stopping');
+
+  const results = [];
+  const ok = (name, cond, extra) => results.push({ name, pass: Boolean(cond), extra });
+
+  state.session = { id: 's1', turns: [] };
+  state.sessions = [state.session];
+
+  runs.trackRequest('r1', 's1', 'agent');
+  composer.syncComposer();
+  ok('a run locks the composer', !released() && !stopping());
+
+  window.__sent.length = 0;
+  composer.stopEverything();
+  ok('Stop reaches the worker', window.__sent[0]?.type === 'AGENT_STOP');
+  ok('Stop does NOT release the composer', !released());
+  ok('the button says it is stopping', stopping() && /Stopping/.test(stop.title), stop.title);
+
+  await new Promise((r) => setTimeout(r, 4000));
+  ok('still held four seconds later', !released());
+
+  // The worker confirming is what normally ends it.
+  runs.forgetRequest('r1');
+  composer.syncComposer();
+  ok('AGENT_FINISHED releases it', released() && !stopping());
+
+  // A second press is the escape from a worker that never answers.
+  runs.trackRequest('r2', 's1', 'agent');
+  composer.syncComposer();
+  composer.stopEverything();
+  composer.stopEverything();
+  ok('a second press lets go locally', released());
+
+  // So is the grace timer, for whoever presses once and waits.
+  runs.trackRequest('r3', 's1', 'agent');
+  composer.syncComposer();
+  composer.stopEverything();
+  await new Promise((r) => setTimeout(r, 11000));
+  ok('the grace timer lets go on its own', released() && !runs.isStopping('r3'));
+
+  window.__results = results;
+  const box = document.createElement('pre');
+  box.style.cssText = 'position:fixed;top:0;right:0;background:#111;color:#eee;padding:12px;font:12px monospace;z-index:9';
+  const NL = '\n';
+  const line = (r) => (r.pass ? 'ok   ' : 'FAIL ') + r.name + (r.pass ? '' : ' — ' + r.extra);
+  const tally = results.filter((r) => r.pass).length + '/' + results.length + ' passed';
+  box.textContent = results.map(line).join(NL) + NL + NL + tally;
+  document.body.append(box);
+</script>
+</body>
+</html>

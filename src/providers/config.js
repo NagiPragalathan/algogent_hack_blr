@@ -532,6 +532,17 @@ export const DEFAULT_PROVIDERS = {
     matches: ['https://arena.ai/*'],
     submitWith: 'click',
     /**
+     * The newest message is the FIRST child, not the last.
+     *
+     * Arena's thread is an `<ol class="… flex-col-reverse">`, so CSS puts the
+     * first DOM child at the bottom and document order runs newest-to-oldest.
+     * Everything in `adapter.js` that says "the latest reply" means
+     * `nodes[nodes.length - 1]`, which here is the OLDEST reply in the
+     * conversation — so every turn of a run came back with the answer to the
+     * first question ever asked in it. See `inThreadOrder`.
+     */
+    reversedThread: true,
+    /**
      * Window-only, and deliberately not in DIRECT_PROVIDERS.
      *
      * The obvious move is a `direct/arena.js` beside the other four, and it
@@ -591,9 +602,12 @@ export const DEFAULT_PROVIDERS = {
        * the answer plainly on screen. That is the "Arena AI did not answer —
        * reopening its window" loop.
        *
-       * With no `user` match, `freshText` takes its documented fallback —
+       * With no `user` match, `freshText` takes its documented fallback:
        * newest assistant text, accepted once it differs from what was on screen
-       * before we sent — which needs no document order and is correct here.
+       * before we sent. That fallback ALSO reads document order — "newest" is
+       * `nodes[nodes.length - 1]` — which is what `reversedThread` above is
+       * for. Both halves are needed: this one keeps the anchored branch
+       * unreachable, that one makes the fallback point at the right end.
        */
       user: [],
       attach: [

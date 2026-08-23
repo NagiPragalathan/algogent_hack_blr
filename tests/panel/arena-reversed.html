@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>reversed thread</title>
+<style>#thread { display:flex; flex-direction: column-reverse; list-style:none; }</style>
+</head>
+<body>
+<!--
+  arena.ai's thread shape: an <ol> laid out column-reverse, so the FIRST DOM
+  child is the NEWEST message and CSS draws it at the bottom. Everything in
+  adapter.js that says "the latest reply" is nodes[nodes.length - 1] — which
+  here is the OLDEST reply in the conversation.
+
+  The failure: every turn came back with the answer to the first question ever
+  asked in the chat, which is a real reply and so looks like a working one.
+-->
+<ol id="thread"></ol>
+<form onsubmit="return false">
+  <textarea placeholder="Ask followup..."></textarea>
+  <button type="button" aria-label="Send message" id="go">go</button>
+</form>
+
+<script>
+  const thread = document.getElementById('thread');
+
+  /** Newest first, the way arena builds it. */
+  function prepend(cls, text) {
+    const li = document.createElement('li');
+    if (cls) li.className = cls;
+    const d = document.createElement('div');
+    d.className = 'prose';
+    d.textContent = text;
+    li.append(d);
+    thread.prepend(li);
+    return d;
+  }
+
+  // A conversation already several turns old.
+  prepend('bg-surface-raised', 'hyy');
+  prepend('', 'Hello! How can I help you today? Let me know if you have any questions.');
+  prepend('bg-surface-raised', 'Name this conversation.');
+  prepend('', 'Google Page Assistance');
+
+  window.__log = [];
+  document.getElementById('go').addEventListener('click', () => {
+    const ta = document.querySelector('textarea');
+    if (!ta.value.trim()) return;
+    prepend('bg-surface-raised', ta.value);
+    ta.value = '';
+    window.__log.push('sent');
+    // The reply arena actually produced, per the screenshot.
+    setTimeout(() => prepend('', '```json\n{"action":"type","id":7,"text":"Wikipedia Artificial Intelligence","submit":true}\n```'), 400);
+  });
+
+  window.__events = [];
+  let handler = null;
+  window.chrome = {
+    runtime: {
+      onMessage: { addListener: (fn) => { handler = fn; } },
+      sendMessage: (m) => { window.__events.push(m); return Promise.resolve(); },
+      id: 'test'
+    },
+    storage: { local: { get: (_k, cb) => cb({}) }, onChanged: { addListener() {} } }
+  };
+  window.__send = (msg) => new Promise((r) => handler({ target: 'adapter', ...msg }, {}, r));
+
+  window.__SIDEBAR_AI = {
+    settings: { readyTimeoutMs: 8000, responseTimeoutMs: 20000, stabilityMs: 700 },
+    provider: {
+      id: 'arena', name: 'Arena AI', submitWith: 'click',
+      // The flag under test. Flip it off and this fixture fails the way the
+      // real thing did.
+      reversedThread: !new URLSearchParams(location.search).has('flat'),
+      selectors: {
+        composer: ['textarea'],
+        send: ['button[aria-label="Send message"]'],
+        stop: ['button[aria-label*="Stop" i]'],
+        streaming: [],
+        assistant: ['div.prose:not(.bg-surface-raised > *)'],
+        user: [],
+        attach: [], loggedOut: [], ready: ['textarea']
+      }
+    }
+  };
+</script>
+<script src="/src/adapters/adapter.js"></script>
+<script type="module">
+  const results = [];
+  const ok = (name, cond, extra) => results.push({ name, pass: Boolean(cond), extra });
+
+  await window.__send({ type: 'SUBMIT', reqId: 'q1', text: 'Open Wikipedia and search for Artificial Intelligence.' });
+  await new Promise((r) => setTimeout(r, 8000));
+
+  const done = window.__events.filter((e) => e.state === 'done').pop();
+  const text = done?.text || '';
+
+  ok('an answer came back at all', Boolean(done), window.__events.map((e) => e.state).join(','));
+  ok('it is THIS turn\u2019s reply', text.includes('"action":"type"'), text.slice(0, 120));
+  ok('not the first reply in the conversation',
+    !text.includes('How can I help you today'), text.slice(0, 120));
+
+  window.__results = results;
+  const box = document.createElement('pre');
+  box.style.cssText = 'position:fixed;top:0;right:0;background:#111;color:#eee;padding:12px;font:12px monospace;z-index:9';
+  const NL = '\n';
+  const line = (r) => (r.pass ? 'ok   ' : 'FAIL ') + r.name + (r.pass ? '' : ' \u2014 ' + r.extra);
+  box.textContent = results.map(line).join(NL) + NL + NL +
+    results.filter((r) => r.pass).length + '/' + results.length + ' passed';
+  document.body.append(box);
+</script>
+</body>
+</html>

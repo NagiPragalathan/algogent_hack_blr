@@ -121,9 +121,38 @@ export function systemPrompt(task) {
     'Reply with exactly one fenced JSON block per turn, and nothing that',
     'contradicts it:',
     '',
+    /**
+     * A REAL thought, not a description of one.
+     *
+     * This said `"one short line on why"`, which is a placeholder in the shape
+     * of a value — and a model asked for a JSON object copies it. Measured on a
+     * ChatGPT run: the task was "open my gmail, read the top 5 unread
+     * messages", and the reply was
+     * `{"thought":"one short line on why","action":"click","id":12}` — id 12
+     * being "I'm Feeling Lucky" on the Google homepage the run had just opened.
+     * The run landed on Google Doodles. A model that has copied the field
+     * description instead of filling it in has not reasoned about the action
+     * either, so the wrong click and the empty thought are one failure and this
+     * is the cheap end of it.
+     */
     '```json',
-    '{"thought":"one short line on why","action":"click","id":12}',
+    '{"thought":"[12] is the Sign in button, so press it","action":"click","id":12}',
     '```',
+    '',
+    /**
+     * Go where the task says, rather than hunting for it from wherever you are.
+     *
+     * The same run: a task naming Gmail outright, a model on google.com, and a
+     * click on the first plausible-looking button in the element list. The
+     * element list is a strong pull — it is the concrete thing in front of the
+     * model — and nothing in the prompt said that an address is usually the
+     * shorter road. It costs one action and cannot land on the wrong control.
+     */
+    'If the task names a site or page you are not on, go straight there with',
+    '`navigate` — do not hunt for it through links on whatever page you happen',
+    'to be looking at. "Open my Gmail" is',
+    '{"thought":"the task names Gmail","action":"navigate","url":"https://mail.google.com/"}',
+    'and never a click on something promising in the element list.',
     '',
     'When the whole sequence is already visible in the observation in front of',
     'you, send it as one plan instead of one action per turn — a turn costs',
