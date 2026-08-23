@@ -24,7 +24,7 @@ export const NETWORKS = {
     usdcAssetId: 10458941,
     explorerUrl: 'https://lora.algokit.io/testnet/account/',
     peraExplorerUrl: 'https://testnet.explorer.perawallet.app/accounts/',
-    faucetUrl: 'https://dispenser.testnet.algorand.network'
+    faucetUrl: 'https://lora.algokit.io/testnet/fund'
   },
   mainnet: {
     id: 'mainnet',
@@ -144,7 +144,7 @@ export async function initWallet() {
       await refreshWalletBalance();
     }
   } catch (err) {
-    console.error('Failed to restore wallet session:', err);
+    // Retain clean fallback
   }
 
   renderWalletUI();
@@ -168,7 +168,7 @@ async function saveWalletState() {
       }
     });
   } catch (err) {
-    console.error('Failed to save wallet session:', err);
+    // Retain clean fallback
   }
 }
 
@@ -222,7 +222,7 @@ export async function refreshWalletBalance() {
       walletState.usdcBalance = '0.00';
     }
   } catch (err) {
-    console.warn('Algod node query warning:', err.message);
+    // balance fetch failed silently
   }
 
   renderWalletUI();
@@ -257,7 +257,7 @@ function requestLuteConnect(genesisID) {
       const data = event.data || event.detail;
       if (!data) return;
 
-      console.log('[Lute Event Received]:', data);
+      // Lute event received
 
       switch (data.action) {
         case 'ready':
@@ -334,7 +334,7 @@ export async function connectWallet(providerId) {
           resolvedAddress = accounts.address;
         }
       } catch (enableErr) {
-        console.log('Injected enable rejected or not available:', enableErr);
+        // injected wallet not available, continue to web flow
       }
     }
 
@@ -355,7 +355,7 @@ export async function connectWallet(providerId) {
           await finalizeConnection(provider.id, provider.name, addr);
         }
       } catch (err) {
-        console.log('Lute connect waiting or cancelled:', err.message);
+        // Lute connect was cancelled or closed
       }
       return;
     }
@@ -381,23 +381,34 @@ export async function connectWallet(providerId) {
       const kmdUrl = NETWORKS.localnet.kmdUrl;
       try {
         const res = await fetch(`${kmdUrl}/v1/wallets`, { signal: AbortSignal.timeout(3000) });
-        if (!res.ok) throw new Error('LocalNet KMD server not reachable at ' + kmdUrl);
+        if (!res.ok) {
+          walletState.loading = false;
+          flashHint('LocalNet KMD not reachable. Please start algokit localnet.', 3500);
+          renderWalletUI();
+          return;
+        }
         const data = await res.json();
         const firstWallet = data.wallets?.[0];
-        if (!firstWallet) throw new Error('No wallets found in local KMD');
+        if (!firstWallet) {
+          walletState.loading = false;
+          flashHint('No wallets found in local KMD instance.', 3500);
+          renderWalletUI();
+          return;
+        }
         resolvedAddress = firstWallet.id;
         await finalizeConnection(provider.id, provider.name, resolvedAddress);
       } catch (err) {
-        throw new Error(`KMD connection failed: ${err.message}. Make sure algokit localnet is running.`);
+        walletState.loading = false;
+        flashHint('LocalNet KMD not running (http://localhost:4002). Start algokit localnet.', 3500);
+        renderWalletUI();
       }
       return;
     }
 
   } catch (err) {
-    console.error('Wallet connect error:', err);
     walletState.loading = false;
     walletState.error = err.message;
-    flashHint(err.message, 4000);
+    flashHint(err.message || 'Could not connect wallet', 3500);
     renderWalletUI();
   }
 }
