@@ -86,6 +86,130 @@ export const autoPayNetwork = () => client?.network || null;
 export const autoPayProblem = () =>
   enabled ? problem : 'per-step payment is switched off in the wallet panel';
 
+/**
+ * The user's own seed phrase, if they have given one — and everything about
+ * handling it is a compromise somebody has to have agreed to knowingly.
+ *
+ * WHY IT EXISTS. The marketplace has an account of its own and pays from it,
+ * which is the fallback. Somebody who wants their OWN account to pay has two
+ * ways to say so: connect a wallet, which means approving every payment, or
+ * hand over the phrase, which means not being asked. This is the second.
+ *
+ * WHAT IT COSTS, and this is not hedging. A seed phrase is total control of an
+ * account with no recovery and no revocation. This one sits in
+ * `chrome.storage.local` — readable by anything with access to the profile —
+ * and travels to the marketplace with every settlement, where it is used and
+ * dropped. The honest summary is: use a throwaway account funded with what you
+ * are willing to lose, and treat "I typed my seed into an extension" as a
+ * decision, not a setting.
+ *
+ * WHAT IS GUARDED ANYWAY, because "the user agreed" is not a licence to be
+ * careless with it:
+ *
+ *   - it goes to HTTPS or localhost and nowhere else (`safeDestination`), so a
+ *     `marketplaceApi` override cannot quietly redirect it;
+ *   - it is never rendered back into the panel — the wallet sheet shows the
+ *     derived ADDRESS, which the server returns and which is public anyway;
+ *   - it is never put on the chain: the note is built server-side from a fixed
+ *     set of fields;
+ *   - clearing it here clears it everywhere the panel keeps it, and payment
+ *     returns to the marketplace's own account.
+ */
+const SEED_KEY = 'x402UserSeed';
+let seed = '';
+let seedAddress = '';
+
+export const userSeedSet = () => Boolean(seed);
+export const userSeedAddress = () => seedAddress;
+
+/**
+ * A seed may only be sent somewhere that cannot be eavesdropped, and
+ * `marketplaceApi` is an override anyone with storage access can set. Without
+ * this a redirected base URL turns a convenience into an exfiltration route,
+ * and nothing on screen would say so.
+ */
+function safeDestination() {
+  try {
+    const url = new URL(apiBase());
+    return url.protocol === 'https:' || url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Save a phrase, after asking the marketplace whose account it is.
+ *
+ * Validated remotely rather than locally because the panel cannot derive an
+ * Algorand address — no bundler, no algosdk. That is not only a limitation: a
+ * phrase that parses is not the same as an account that can pay, and the round
+ * trip answers both at once. Nothing is stored until it comes back valid, so a
+ * typo cannot silently replace a working payer.
+ */
+export async function setUserSeed(phrase) {
+  const cleaned = String(phrase || '').trim().replace(/\s+/g, ' ');
+  if (!cleaned) return { ok: false, reason: 'Enter your 25-word recovery phrase.' };
+
+  const words = cleaned.split(' ');
+  if (words.length !== 25) {
+    // Checked here so an obvious mistake costs no round trip and, more to the
+    // point, so a phrase that is plainly not one is never sent anywhere.
+    return { ok: false, reason: `An Algorand phrase is 25 words; that is ${words.length}.` };
+  }
+
+  if (!safeDestination()) {
+    return { ok: false, reason: `${apiBase()} is not https — a seed phrase will not be sent there.` };
+  }
+
+  let data;
+  try {
+    const res = await fetch(`${apiBase()}/api/x402/client`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mnemonic: cleaned })
+    });
+    data = await res.json().catch(() => null);
+    if (!res.ok) return { ok: false, reason: data?.message || `the marketplace answered ${res.status}` };
+  } catch {
+    return { ok: false, reason: 'the marketplace could not be reached' };
+  }
+
+  if (!data?.address) {
+    return { ok: false, reason: data?.reason || 'the marketplace would not accept that phrase' };
+  }
+
+  seed = cleaned;
+  seedAddress = data.address;
+  client = { address: data.address, network: data.network, funded: data.funded, own: true };
+  problem = data.funded === false ? `${data.address} is not funded` : '';
+
+  try {
+    await chrome.storage.local.set({ [SEED_KEY]: cleaned });
+  } catch {
+    // In memory it still works for this session; say nothing, because the
+    // payment it is about to make will succeed either way.
+  }
+
+  return { ok: true, address: data.address, balance: data.balance, funded: data.funded };
+}
+
+/** Forget it. Payment goes back to the marketplace's own account. */
+export async function clearUserSeed() {
+  seed = '';
+  seedAddress = '';
+  try {
+    await chrome.storage.local.remove(SEED_KEY);
+  } catch {
+    // Nothing to do about it, and the in-memory copy is already gone.
+  }
+
+  // Re-ask, so the sheet immediately shows the fallback account rather than
+  // the address of a phrase that is no longer being used.
+  probe = null;
+  client = null;
+  await initAutoPay();
+}
+
 /** Flip it, and remember. Returns the new state so a caller can repaint. */
 export async function setAutoPayEnabled(on) {
   enabled = Boolean(on);

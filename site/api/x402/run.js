@@ -39,7 +39,13 @@ import {
   explorerFor,
   unfundedReceivers
 } from '../_lib/algorand.js';
-import { clientAccount, autoSignProblem, signGroups } from '../_lib/client-wallet.js';
+import {
+  clientAccount,
+  accountFrom,
+  autoSignProblem,
+  signGroups
+} from '../_lib/client-wallet.js';
+import { autoSignMainnetAllowed } from '../_lib/config.js';
 
 /** A run longer than this is refused rather than silently truncated. */
 const MAX_ITEMS = 120;
@@ -115,15 +121,44 @@ export default handler('POST', async (req, res) => {
   const auto = input.autoSign === true || url.searchParams.get('auto') === '1';
   let buyer;
 
+  /**
+   * Whose account pays. The caller's own if they sent a phrase, ours if not —
+   * which is the whole of what "the site account is a fallback" means.
+   *
+   * A phrase that does not parse is REFUSED rather than falling back to the
+   * house account. Somebody who has said "pay from this account" and mistyped
+   * it must not silently have the marketplace's account charged instead: that
+   * is money moving from a place they did not choose, reported as success.
+   *
+   * Never logged, never stored, never returned. See `accountFrom`.
+   */
+  let signer = null;
+
   if (auto) {
-    const problem = autoSignProblem(network);
-    if (problem) {
-      // 503 rather than 400: nothing about the request is wrong, the deploy is
-      // simply not set up to pay for itself. The panel reports it as a decline
-      // and the answer it belongs to is already on screen.
-      return fail(res, 503, 'autosign_unavailable', problem);
+    if (input.signer) {
+      signer = accountFrom(input.signer);
+      if (!signer) {
+        return fail(
+          res,
+          400,
+          'invalid_signer',
+          'That is not a valid 25-word Algorand mnemonic. Nothing was charged.'
+        );
+      }
+      if (network === 'mainnet' && !autoSignMainnetAllowed()) {
+        return fail(res, 503, 'autosign_unavailable', autoSignProblem(network));
+      }
+      buyer = signer.address;
+    } else {
+      const problem = autoSignProblem(network);
+      if (problem) {
+        // 503 rather than 400: nothing about the request is wrong, the deploy
+        // is simply not set up to pay for itself. The panel reports it as a
+        // decline and the answer it belongs to is already on screen.
+        return fail(res, 503, 'autosign_unavailable', problem);
+      }
+      buyer = clientAccount().address;
     }
-    buyer = clientAccount().address;
   } else {
     buyer = String(input.buyer || '').trim();
     if (!ALGORAND_ADDRESS.test(buyer)) {
@@ -250,7 +285,7 @@ export default handler('POST', async (req, res) => {
     if (problem) return fail(res, 409, 'receiver_unfunded', problem);
 
     try {
-      returned = signGroups(groups);
+      returned = signGroups(groups, signer || clientAccount());
     } catch (error) {
       return fail(res, 503, 'autosign_failed', String(error?.message || error));
     }

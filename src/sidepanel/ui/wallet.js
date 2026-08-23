@@ -855,12 +855,20 @@ function bindAutoPay(root) {
   toggle?.addEventListener('change', async (e) => {
     e.stopPropagation();
     const on = await setAutoPayEnabled(e.target.checked);
+
+    /**
+     * Repaint FIRST, hint second, and the order is not arbitrary. The note
+     * under the switch now says something different — that is the half that
+     * has to happen — and the hint is a two-second nicety. Sequencing the
+     * repaint behind it means anything that throws in the hint leaves the
+     * switch showing the state it was in before the click, which reads exactly
+     * like a toggle that does not work.
+     */
+    renderWalletSheet();
     flashHint(
       on ? 'Agent steps will be paid for as they happen.' : 'Agent steps will not be charged.',
       2500
     );
-    // Repaint, because the note under the switch says something different now.
-    renderWalletSheet();
   });
 }
 
@@ -878,8 +886,19 @@ function autoPayNote() {
     );
   }
 
+  /**
+   * The reason is a whole sentence written by whoever produced it — the server
+   * ends its own with a full stop, the local ones do not — so the trailing one
+   * is trimmed rather than assumed either way. "configured.." reads as a bug in
+   * the thing that is trying to explain a bug.
+   */
+  const reason = (autoPayProblem() || 'the marketplace has no account to pay from').replace(
+    /\.\s*$/,
+    ''
+  );
+
   return (
-    `Not settling automatically — ${autoPayProblem() || 'the marketplace has no account to pay from'}. ` +
+    `Not settling automatically — ${reason}. ` +
     'Steps bank for one signature from your own wallet at the end of a run.'
   );
 }

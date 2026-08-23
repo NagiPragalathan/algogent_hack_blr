@@ -3,8 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <title>pay per agent step — does the switch mean what it says?</title>
+    <link rel="stylesheet" href="/src/sidepanel/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/sidepanel/styles/base.css" />
+    <link rel="stylesheet" href="/src/sidepanel/styles/sheets.css" />
+    <link rel="stylesheet" href="/src/sidepanel/styles/wallet.css" />
     <style>
       body { font: 13px/1.5 ui-monospace, monospace; background: #14161a; color: #e6e8eb; padding: 20px; }
+      #wallet-pill { display: none; }
+      #wallet-menu { max-width: 380px; margin: 0 0 18px; padding: 12px;
+                     background: var(--bg); color: var(--fg); border-radius: 12px; }
       .p { color: #7ee787; }
       .f { color: #ff7b72; }
       .n { color: #9aa1ac; }
@@ -43,6 +50,17 @@
       Serve the repo over http and open this page.
     -->
     <div id="thread"></div>
+
+    <!--
+      The wallet sheet, really rendered.
+      A switch that exists in the source and does not appear on screen is
+      indistinguishable from one that was never built — which is exactly how
+      this was reported. So the sheet is drawn here with the panel's own
+      stylesheets and the block is asserted to be IN it, in both states of the
+      sheet: connected, and the wallet list.
+    -->
+    <div id="wallet-pill"><span id="wallet-dot"></span><span id="wallet-label"></span></div>
+    <div id="wallet-menu"><div id="wallet-content"></div></div>
     <div id="report">running…</div>
     <script type="module">
       const report = document.getElementById('report');
@@ -233,6 +251,44 @@
 
       /* ── the marketplace cannot pay ───────────────────────────────────── */
 
+      /* ── the switch is on screen, in both states of the sheet ─────────── */
+
+      note('the wallet sheet actually draws it');
+      const { renderWalletSheet, walletState } = await import('/src/sidepanel/ui/wallet.js');
+      const content = document.getElementById('wallet-content');
+
+      renderWalletSheet();
+      ok('the disconnected sheet carries the switch',
+         Boolean(content.querySelector('#wallet-autopay-toggle')));
+      ok('with a note under it that is not empty',
+         (content.querySelector('.wallet-autopay-note')?.textContent || '').length > 20,
+         content.querySelector('.wallet-autopay-note')?.textContent);
+
+      walletState.connected = true;
+      walletState.address = 'B55UYGCBZP6JI4ABHMQECGBMXESYIUZJBG4ZKLD4BISCUDDROQUKO35KXU';
+      walletState.providerName = 'Lute Wallet';
+      renderWalletSheet();
+      ok('the connected sheet carries it too',
+         Boolean(content.querySelector('#wallet-autopay-toggle')));
+      ok('and names who is paying',
+         /B55UYG/.test(content.querySelector('.wallet-autopay-note')?.textContent || ''),
+         content.querySelector('.wallet-autopay-note')?.textContent);
+
+      note('clicking it flips the setting');
+      const toggle = content.querySelector('#wallet-autopay-toggle');
+      toggle.click();
+      await settled();
+      ok('off after one click', autoPayEnabled() === false);
+      ok('and the note says nothing is charged',
+         /No transaction is made/.test(
+           document.querySelector('.wallet-autopay-note')?.textContent || ''
+         ),
+         document.querySelector('.wallet-autopay-note')?.textContent);
+
+      document.querySelector('#wallet-autopay-toggle').click();
+      await settled();
+      ok('and back on', autoPayEnabled() === true);
+
       note('a 503 from the marketplace stops it asking again');
       posted.length = 0;
 
@@ -263,7 +319,7 @@
       ok('the second does not repeat a settled fact', posted.length === 1,
          `${posted.length} requests`);
       ok('and the reason is filed where the user can read it',
-         /client account/.test(declineFor('s-503')?.reason || declineFor(null)?.reason || String(declineFor('s-503'))),
+         /client account/.test(declineFor('s-503')?.reason || ''),
          JSON.stringify(declineFor('s-503')));
 
       report.innerHTML = lines.join('') + `<hr>${pass}/${pass + fail} passed`;

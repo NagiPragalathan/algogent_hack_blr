@@ -62,6 +62,45 @@ export function clientAccount() {
 }
 
 /**
+ * An account from a mnemonic the CALLER supplied, rather than the environment.
+ *
+ * This is the "pay from my own account instead" road, and it is the reason the
+ * env account is described everywhere as a fallback: a request carrying a
+ * mnemonic pays from that one, a request without carries on paying from ours.
+ *
+ * WHAT THIS COSTS, PLAINLY, because it is the part nobody should discover
+ * later. The phrase arrives over the wire. For the length of one request this
+ * process can spend everything in that account, and anything able to read the
+ * request — a proxy, a log line, a crash dump — can spend it forever. So:
+ *
+ *   - it is NEVER written to the database, and there is no column for it;
+ *   - it is NEVER logged, which is why nothing here echoes the body and why
+ *     `handler` logs the error rather than the request;
+ *   - it is NEVER put in the on-chain note, which `noteFor` builds from a
+ *     fixed set of fields;
+ *   - it is NEVER returned, not even partially. The only thing that goes back
+ *     is the derived public address, which is public the moment it pays.
+ *   - it is NOT cached between requests. `cached` above is keyed on the
+ *     environment's value and this road does not touch it, so one caller's
+ *     phrase can never be reused for another caller's payment.
+ *
+ * Returns null for anything that is not a valid mnemonic, and the caller turns
+ * that into a refusal rather than quietly falling back to the house account —
+ * paying from the wrong account is not a reasonable recovery from a typo.
+ */
+export function accountFrom(mnemonic) {
+  const phrase = String(mnemonic || '').trim().replace(/\s+/g, ' ');
+  if (!phrase) return null;
+
+  try {
+    const account = algosdk.mnemonicToSecretKey(phrase);
+    return { address: account.addr.toString(), sk: account.sk };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Why automatic payment is not available, or '' when it is.
  *
  * A sentence rather than a code, and returned rather than thrown, because this
@@ -112,8 +151,7 @@ export const autoSignReady = (network) => autoSignProblem(network) === '';
  * thing: one road into settlement, checked once, no branch where the check is
  * skipped because the source was trusted.
  */
-export function signGroups(groups) {
-  const account = clientAccount();
+export function signGroups(groups, account = clientAccount()) {
   if (!account) throw new Error('no client account is configured');
 
   return groups.map((group) => ({
