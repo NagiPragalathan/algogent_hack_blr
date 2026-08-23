@@ -19,8 +19,21 @@
  * appear.
  */
 
-import { receiptsFor, totalsOf, toAlgo, declineFor } from '../payments/ledger.js';
-import { ellipseAddress } from './wallet.js';
+import { receiptsFor, totalsOf, toAlgo, declineFor, payeesOf } from '../payments/ledger.js';
+import { ellipseAddress, NETWORKS } from './wallet.js';
+
+/**
+ * Where to look this address up, on somebody else's site.
+ *
+ * The per-leg "view" link opens one TRANSACTION; this opens the ACCOUNT, which
+ * is what answers "has this address actually received what the block says".
+ * Both matter and they are different pages — a receipt you can only check
+ * against the thing that issued it is not a receipt.
+ */
+const accountUrl = (network, address) => {
+  const base = NETWORKS[network || 'testnet']?.explorerUrl;
+  return base && address ? `${base}${address}` : '';
+};
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag);
@@ -37,12 +50,24 @@ const el = (tag, className, text) => {
  * visibly adds up to the total IS the calculation, and this is the block whose
  * whole job is being checkable.
  */
-function legRow(label, { address, microAlgo, txid, explorer }) {
+function legRow(label, { address, microAlgo, txid, explorer, network }) {
   const item = el('li', 'receipt-leg');
   item.append(el('span', 'receipt-leg-label', label));
 
-  const to = el('span', 'receipt-address', ellipseAddress(address, 6, 4));
+  /**
+   * The address links to the ACCOUNT, the "view" at the end links to the
+   * TRANSACTION. Two different questions — "who is this" and "did this
+   * specific payment land" — and before this only the second was answerable
+   * without copying 58 characters out by hand.
+   */
+  const href = accountUrl(network, address);
+  const to = el(href ? 'a' : 'span', 'receipt-address', ellipseAddress(address, 6, 4));
   to.title = address;
+  if (href) {
+    to.href = href;
+    to.target = '_blank';
+    to.rel = 'noreferrer';
+  }
   item.append(to);
 
   item.append(el('span', 'receipt-leg-amount', `${toAlgo(microAlgo)} ALGO`));
@@ -91,10 +116,26 @@ function receiptRow(receipt) {
      * This is the whole reason a run pays with a leg per action rather than one
      * lump sum — every line here is independently checkable, and the step index
      * ties it back to the step in the timeline the user watched happen.
+     *
+     * The marketplace's cut is drawn LAST rather than in the order the chain
+     * happened to put it, and labelled as a cut rather than as a step. It is
+     * the one line that is not work anybody did, so listing it among the
+     * actions is what made a one-step run read as two.
      */
-    for (const line of receipt.lines) {
+    const actions = receipt.lines.filter((l) => l.agentId);
+    const fees = receipt.lines.filter((l) => !l.agentId);
+
+    for (const line of [...actions, ...fees]) {
       const label = line.step == null ? line.label : `${line.step}. ${line.label}`;
-      legs.append(legRow(label, { address: line.to, microAlgo: line.microAlgo, txid: line.txid, explorer: line.explorer }));
+      legs.append(
+        legRow(label, {
+          address: line.to,
+          microAlgo: line.microAlgo,
+          txid: line.txid,
+          explorer: line.explorer,
+          network: receipt.network
+        })
+      );
     }
   } else {
     // A skill purchase: two legs, the developer and the marketplace.
@@ -178,6 +219,56 @@ export async function buildReceiptBlock(sessionId) {
     note.append(el('span', 'receipts-declined-mark', 'Not charged'));
     note.append(el('span', 'receipts-declined-why', decline.reason));
     block.append(note);
+  }
+
+  /**
+   * Who ended up with the money, in total, with a link to check each one.
+   *
+   * The rows above answer "what did THIS action cost". This answers "how much
+   * has that address received", which is the question anyone reconciling
+   * against an explorer is actually asking — an explorer shows an account, not
+   * our list of steps, and twenty legs to two addresses meant adding twenty
+   * numbers up by hand to check one.
+   */
+  const payees = payeesOf(receipts);
+  if (payees.length) {
+    const paid = el('div', 'receipts-payees');
+    paid.append(el('div', 'receipts-payees-title', 'Total paid to'));
+
+    const list = el('ul', 'receipts-payee-list');
+    for (const payee of payees) {
+      const row = el('li', 'receipts-payee');
+      row.append(
+        el(
+          'span',
+          'receipts-payee-role',
+          payee.role === 'marketplace' ? 'Marketplace' : 'Developer'
+        )
+      );
+
+      const href = accountUrl(payee.network, payee.address);
+      const address = el(href ? 'a' : 'span', 'receipt-address', ellipseAddress(payee.address, 6, 4));
+      address.title = payee.address;
+      if (href) {
+        address.href = href;
+        address.target = '_blank';
+        address.rel = 'noreferrer';
+      }
+      row.append(address);
+
+      row.append(
+        el(
+          'span',
+          'receipts-payee-calls',
+          `${payee.calls} ${payee.calls === 1 ? 'payment' : 'payments'}`
+        )
+      );
+      row.append(el('span', 'receipts-payee-amount', `${toAlgo(payee.microAlgo)} ALGO`));
+      list.append(row);
+    }
+
+    paid.append(list);
+    block.append(paid);
   }
 
   // A split of three zeroes under a block that paid nothing is arithmetic

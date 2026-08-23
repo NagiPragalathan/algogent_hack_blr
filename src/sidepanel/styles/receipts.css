@@ -105,6 +105,9 @@
   color: var(--fg-dim);
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Already shortened to `ZYQRMS…33YM`; wrapping that across two lines beside a
+     long action label makes it unreadable as one identifier. */
+  white-space: nowrap;
 }
 
 .receipt-leg-amount {
@@ -127,6 +130,70 @@
   margin-top: 4px;
   font-size: 11px;
   color: var(--fg-dim);
+}
+
+/*
+ * "Total paid to" — the per-address summary.
+ *
+ * Above it, one row per action answers what each step cost. This answers what
+ * each ADDRESS received, which is the only form the number takes on a block
+ * explorer — so it is the row somebody checking our arithmetic against the
+ * chain actually needs, and without it that meant adding the legs up by hand.
+ *
+ * Its amounts are drawn at full weight while the role and the address stay
+ * dimmed: the number is what is being checked, everything else is a label for
+ * it.
+ */
+.receipts-payees {
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.receipts-payees-title {
+  font-size: 10.5px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin-bottom: 4px;
+}
+
+.receipts-payee-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.receipts-payee {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+}
+
+.receipts-payee-role {
+  flex: 0 0 auto;
+  color: var(--fg-dim);
+}
+
+.receipts-payee .receipt-address {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.receipts-payee-calls {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--fg-dim);
+}
+
+.receipts-payee-amount {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
 }
 
 .receipts-foot {

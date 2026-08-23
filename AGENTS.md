@@ -77,6 +77,7 @@ tests/
   agent/dead-ends.test.mjs        a 404 is a dead link, not an unreadable page
   content/frame-guard.test.mjs  only the top frame answers a broadcast
   panel/receipts.html      the fee block, and a hostile tool label as TEXT
+  panel/autopay.html       pay-per-step: the switch, the seed box, who pays
   panel/*.html           self-checking browser fixtures — see the end of this file
 
 src/content/             classic content scripts (NOT ES modules — see below)
@@ -108,7 +109,10 @@ src/sidepanel/           the panel UI
   lib/                   icons, markdown, highlight, preset-skills — no knowledge
                          of this panel
   payments/              paying a skill's author, per use
+    api.js               where the marketplace is, and the shape of a refusal
     x402.js              quote, sign, settle — and every reason not to charge
+    auto-pay.js          paying with nobody asked: the switch, and whose seed
+    run-billing.js       a run's actions, charged per step or banked for a wallet
     ledger.js            the local mirror of settled receipts, per conversation
 ```
 
@@ -122,8 +126,12 @@ site/
   api/_lib/split.js      the 80/20 arithmetic. Integer only, remainder to the dev
   api/_lib/algorand.js   builds the atomic group, re-checks it, submits it
   api/agents/register    a developer publishes an agent and a payout address
+  api/_lib/client-wallet.js  the key that signs when nobody is asked to
   api/x402/quote         the 402 challenge + the unsigned group
   api/x402/settle        verify → submit → confirm → THEN write the receipt
+  api/x402/run           a run's actions, quoted and settled — and the one road
+                         that signs for itself (`autoSign`)
+  api/x402/client        who pays, and "whose account is this phrase?"
   api/receipts/          the fee history the panel prints
   src/lib/registry.ts    the typed client. UI-free
 ```
@@ -1595,6 +1603,60 @@ nobody registered is free, an unreachable marketplace is free, a wallet on the
 wrong network is free, a declined signature is free. A missing registry entry
 must never mean "charge something".
 
+**A run pays per step now, and the only reason that is possible is that nobody
+is asked to sign.** The rule below is still right about the wallet road: a run
+is thirty actions, a prompt per action is unusable, so those actions accumulate
+and take ONE signature at the end. What changed is that there is a second road
+where the marketplace holds a key of its own (`CLIENT_MNEMONIC`) and signs
+server-side. With no popup to batch away from, batching is pure cost — it delays
+every receipt to the end of the run and loses the ones a Stop throws away — so
+`charge()` in `run-billing.js` settles each action the moment it happens.
+`payAuto` is never awaited, like everything else here: the run is mid-flight and
+a payment may not hold it up.
+
+Four things about that road are load-bearing. It is not a second SETTLE path —
+`autoSign` joins `api/x402/run` exactly where a wallet's signatures would have
+arrived, so `assertMatches` still re-checks every leg against a plan the server
+re-derived, and there is no branch that skips verification because the bytes
+came from inside. The panel asks ONCE (`/api/x402/client`) rather than trying
+and seeing, because a failed attempt is indistinguishable from every other
+decline and the sheet has to be able to SAY which road it is on. Actions filed
+before that probe answers are not lost: they bank, and `settleRun` sends them
+the automatic way rather than falling through to a prompt. And `seq` exists
+because per-step settlement builds each payment on its own — two actions with
+the same verb, price, label and session inside one block window are the same
+transaction id, and the second is refused as already in the ledger. The client
+queue serialises for the same reason, and so the receipts appear in the order
+the user watched the steps happen.
+
+**"Off" has to mean no transaction, not a transaction deferred.** The switch
+(`autoPayEnabled`, drawn in the wallet sheet) is checked in `noteAction` and
+`noteAnswer` BEFORE anything is recorded, not before anything is charged. The
+obvious version — record it, skip the charge — leaves the bag for `settleRun`,
+which finds items and settles them at the end of the run: a payment the user
+switched off, arriving a minute later through a different door. Nothing is
+filed, so nothing is owed. `payAuto` re-checks anyway, because that is the only
+guard covering a bag banked before anyone looked at a switch.
+
+**A user's own seed replaces the site's; the site's is the fallback.** One
+field, `signer`, on the settle request: present means pay from that account,
+absent means pay from `CLIENT_MNEMONIC`. A phrase that does not parse is
+REFUSED rather than falling back — somebody who said "pay from this account"
+and mistyped it must not silently have the marketplace's account charged
+instead, reported as success.
+
+Be honest about what this costs, because the code cannot be honest for you: a
+seed phrase is total control of an account with no revocation, it sits in
+`chrome.storage.local`, and it crosses the wire on every settlement. It is a
+deliberate trade for a throwaway TestNet account and a bad one for anything
+else. What IS guarded: `safeDestination()` refuses to send it anywhere but
+https (or localhost), re-checked at send time rather than at save time because
+`marketplaceApi` can change in between; the server never stores it, never logs
+it, never puts it in the on-chain note and returns only the derived address;
+the panel never renders it back, so the box is always empty and the ADDRESS is
+what tells you saving worked; and MainNet needs `X402_AUTOSIGN_MAINNET=1` said
+out loud, for a phrase off the wire as much as for the one in the environment.
+
 **The client never decides the split, because it would have every reason to
 lie.** The percentage and the company address are read server-side per request
 and are not inputs to anything the extension sends. The panel receives an
@@ -2972,6 +3034,13 @@ they cover are timing and layout, which a fake DOM cannot reproduce.
 node -e "const h=require('http'),f=require('fs'),p=require('path'),t={'.html':'text/html','.js':'text/javascript','.css':'text/css'};h.createServer((q,s)=>{const x=p.join(process.cwd(),decodeURIComponent(q.url.split('?')[0]));f.readFile(x,(e,d)=>{if(e){s.writeHead(404);return s.end()}s.writeHead(200,{'content-type':t[p.extname(x)]||'text/plain'});s.end(d)})}).listen(8742)"
 ```
 
+- `autopay.html` — pay-per-step. ON, every action posts its own settlement as it
+  happens; OFF, nothing is posted at all, not even banked for a wallet prompt at
+  the end of the run. Also drives the seed box: a phrase of the wrong length
+  never leaves the panel, a valid one changes which account the settlement names,
+  and the phrase never appears anywhere in the rendered sheet. Hermetic — `fetch`
+  is faked, so it asserts what the panel SENDS. Whether the chain accepts it is
+  `site/tests/autopay-live.test.mjs`, which signs and submits for real.
 - `stop.html` — Stop keeps the composer locked until the worker confirms, and
   both escapes work. ~15s, because the grace timer is part of what is tested.
 - `arena-send.html` — a chat UI with no streaming marker whose send button is

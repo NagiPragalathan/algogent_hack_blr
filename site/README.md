@@ -66,6 +66,41 @@ The front end survives it — `/publish` shows its degraded revenue-split card a
 the agent listings report "No registry" — but nothing can actually be
 registered or settled until those four are present.
 
+**`CLIENT_MNEMONIC` is what makes the extension stop asking for signatures.**
+It is the account the marketplace signs with when nobody is there to approve,
+and with it set the extension pays for each agent step by itself — no wallet, no
+popup. Unset, everything still works: the extension falls back to prompting the
+user's own wallet once at the end of a run, which is what it did before this
+existed. So a missing value degrades rather than breaks, and the one visible
+symptom is a switch in the wallet panel reporting "no client account is
+configured".
+
+```
+CLIENT_MNEMONIC          25 words. A hot key — see below
+X402_AUTOSIGN            1 (default) | 0 to switch it off
+X402_AUTOSIGN_MAINNET    1 to allow unattended signing on MainNet
+```
+
+Read this before setting it. There is no confirmation step in front of that key:
+anything that can reach `/api/x402/run` with `autoSign` can spend from it,
+bounded only by the price list and the 120-action cap per request. Use a
+throwaway account, fund it with what you are willing to lose, and keep it off
+MainNet — which is why MainNet needs `X402_AUTOSIGN_MAINNET=1` said separately
+rather than being inherited by changing `X402_NETWORK`.
+
+A user can also supply their own phrase from the extension's wallet panel, in
+which case theirs pays and this one is the fallback. It arrives on the settle
+request, is used once and dropped: never stored, never logged, never written to
+the on-chain note, and only ever the derived public address goes back.
+
+`POST /api/x402/client` with `{ mnemonic }` answers "whose account is this, and
+can it pay?" — which is how the panel validates a pasted phrase, since it has no
+bundler and cannot derive an Algorand address itself. `GET` the same path
+reports whether this deployment pays for itself at all.
+
+Verify the whole thing against real TestNet with `node tests/autopay-live.test.mjs`
+— it signs and submits for real, and asserts the receipt that comes back.
+
 ---
 
 ## Where things live
