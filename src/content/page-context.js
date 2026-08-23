@@ -924,6 +924,32 @@
   }
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    /**
+     * Only the top frame answers a broadcast. The twin of the guard in
+     * agent-page.js, and this file went without one for far too long.
+     *
+     * `chrome.tabs.sendMessage(tabId, msg)` with no frameId goes to EVERY frame
+     * in the tab and settles on whoever calls sendResponse first. This script is
+     * declared on the top frame only — which is why it looked safe — but
+     * `reachFrames` injects it into every subframe the moment an agent run
+     * starts, because the agent needs to see a form inside an iframe. From then
+     * on, for the life of that tab, every EXTRACT_CONTEXT is a race that any
+     * frame can win.
+     *
+     * Measured on a LinkedIn run: the context chip read
+     * *Sharing "reCAPTCHA" — www.google.com · 12,000 chars*, on a tab showing
+     * LinkedIn Jobs. A Google reCAPTCHA iframe had answered first, so the page
+     * "shared" with the model was an invisible challenge widget from another
+     * origin — and nothing anywhere said so except the chip, which names the
+     * document it read and was therefore the only clue.
+     *
+     * Nothing sends EXTRACT_CONTEXT to a specific frame, so "top frame only" is
+     * exactly the whole of what the chat path wants. The pickers are covered by
+     * the same line and want the same thing: they draw an overlay across the
+     * viewport, which is the top frame's to draw.
+     */
+    if (window.top !== window && !msg?.frameTargeted) return;
+
     if (msg?.type === 'PICK_ELEMENT') {
       startPicking().then(sendResponse, (err) =>
         sendResponse({ ok: false, error: String(err?.message || err) })

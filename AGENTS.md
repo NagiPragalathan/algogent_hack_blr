@@ -72,6 +72,7 @@ tests/
   agent/survey-turn.test.mjs  the plan and the first action in one round trip
   agent/not-a-task.test.mjs   "hyy" must not take over the browser
   agent/blind-transport.test.mjs  when a run may take the fast path with no camera
+  content/frame-guard.test.mjs  only the top frame answers a broadcast
   panel/*.html           self-checking browser fixtures — see the end of this file
 
 src/content/             classic content scripts (NOT ES modules — see below)
@@ -781,6 +782,29 @@ sniffed because `getComputedStyle` on a thread container is a layout read on the
 reply loop's hot path. A reversed thread must still keep `user: []`: the array
 can be reordered, the document cannot, so the `compareDocumentPosition` branch
 stays wrong and has to be left unreachable.
+
+**The "thought" is a caption, and nothing ever said so.** It is printed verbatim
+as the one line under each step in the timeline, and the prompt asked only for a
+real thought rather than a placeholder — never for a length. So it grew.
+Measured on a LinkedIn run: *"The search control did not expose a search field,
+while the embedded frame has a direct Jobs link; use that link to load the
+actual jobs results page"* — 140 characters of reasoning as the label for one
+click, eight of those in a row, and the thing you actually want at a glance
+(what was clicked, and why) buried in the middle of each. Asked for in
+characters rather than as "be brief", which does not survive contact with a
+model mid-reasoning, and paired with a line saying to think as long as it likes
+before writing it: the field is the caption, not the thinking.
+
+**Read the URL before navigating, and an unreadable page is not evidence of
+being in the wrong place.** Same run, and it cost the whole budget: the address
+bar said `linkedin.com/jobs/` throughout, while the model spent four steps
+clicking the "Jobs" nav link to reach LinkedIn Jobs, then clicked "Me" at a
+guessed coordinate when that changed nothing twice over. The page had read as
+unreadable on arrival, so it never registered as having arrived — and the URL at
+the top of every observation was the one piece of evidence that said otherwise.
+The failure is invisible from inside: clicking a nav link to the page you are
+already on is a no-op, so nothing fails, nothing errors, and the loop's own
+repeat detection sees two different element ids rather than one repeated action.
 
 **A placeholder in the shape of a value gets copied.** The prompt's first
 example carried `{"thought":"one short line on why", …}` and a model asked for a
@@ -1542,8 +1566,33 @@ with `{dataUrl, screenfuls, capped}` while `captureTab` answers with a bare data
 URL, and `ask` takes the bare one; handing it the object attaches nothing and
 says nothing about it.
 
+**The top-frame guard was in ONE of the two content scripts, and the other one
+is the one the user can see.** `agent-page.js` has refused an untargeted
+broadcast from a subframe since frames were added, for the reason written below.
+`page-context.js` never did — and it looked safe for the same reason it looked
+unnecessary: it is declared on the top frame only. What that misses is
+`reachFrames`, which injects BOTH scripts into every subframe the moment an
+agent run starts, because the agent has to see a form inside an iframe. From
+then on, for the life of that tab, every `EXTRACT_CONTEXT` is a race any frame
+can win.
+
+Measured on a LinkedIn run: the context chip read *Sharing "reCAPTCHA" —
+www.google.com · 12,000 chars* on a tab showing LinkedIn Jobs. A Google
+reCAPTCHA iframe had answered first, so the page "shared" with the model was an
+invisible challenge widget from a different origin — and the only thing on
+screen that said so was the chip, because it names the document it read. Every
+answer after that was about a page nobody was looking at.
+
+The guard is one line and it must be the FIRST line of the listener: placed
+after a branch it protects nothing, since the branch above it has already
+answered from the wrong frame. `tests/content/frame-guard.test.mjs` lifts the
+line out of both files and drives it, and asserts the ordering — the scripts are
+classic and cannot be imported, so the alternative is finding out in a browser
+six weeks later. Nothing sends `EXTRACT_CONTEXT` to a specific frame, so "top
+frame only" is exactly what the chat path wants; the pickers want it too, since
+they draw an overlay across the viewport.
+
 **An iframe is a document the agent is not in, and its absence has no symptom.**
-The content scripts are declared `all_frames: false`, so an embedded form, chat
 widget, payment box or booking calendar contributes nothing to the element list
 — and nothing anywhere says it was left out. The model is handed a
 complete-looking page, cannot find the field it was told to fill, and reports

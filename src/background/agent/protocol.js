@@ -153,6 +153,30 @@ export function systemPrompt(task) {
     'to be looking at. "Open my Gmail" is',
     '{"thought":"the task names Gmail","action":"navigate","url":"https://mail.google.com/"}',
     'and never a click on something promising in the element list.',
+    /**
+     * …and read the URL before doing either.
+     *
+     * Measured on a LinkedIn run: the address bar said linkedin.com/jobs/ the
+     * whole time, and the model spent four steps clicking the "Jobs" nav link
+     * to get to LinkedIn Jobs — then, when that changed nothing twice over,
+     * clicked "Me" at a guessed coordinate. The page had been unreadable on
+     * arrival, so it never registered as having arrived, and the URL sitting
+     * at the top of every observation was the one piece of evidence that said
+     * otherwise.
+     *
+     * It is worth its own line because the failure is invisible from inside:
+     * clicking a nav link on the page you are already on is a no-op, so
+     * nothing fails, nothing errors, and the run can spend its whole budget
+     * on it.
+     */
+    'Before you navigate or click a nav link, read the URL in the OBSERVATION.',
+    'If it is already the page you were heading for, you are there — the next',
+    'action is to work on it. Clicking a link to the page you are on changes',
+    'nothing and reports no error, so it can be repeated until the run runs out.',
+    'If a page you have just arrived at reads as empty or unreadable, that is',
+    'not evidence you are in the wrong place: check the URL, take a screenshot,',
+    'or use a frame from the FRAMES list before deciding to go somewhere else.',
+    '',
     '',
     'When the whole sequence is already visible in the observation in front of',
     'you, send it as one plan instead of one action per turn — a turn costs',
@@ -225,6 +249,26 @@ export function systemPrompt(task) {
     '      Do not click through to confirm something you can already read.',
     '    * Put the whole visible sequence in one reply. Two turns that could have',
     '      been one is half a minute of someone watching a spinner.',
+    /**
+     * The thought is not scratch space — it is the caption under the step.
+     *
+     * It is printed verbatim in the panel's timeline, one line per step, and
+     * nothing ever said how long it should be. So it grew: measured on a
+     * LinkedIn run, "The search control did not expose a search field, while the
+     * embedded frame has a direct Jobs link; use that link to load the actual
+     * jobs results page" — 140 characters of reasoning as the label for a click.
+     * Eight of those in a row is a wall of text over a run you are trying to
+     * follow at a glance, and the thing you actually want to know — what was
+     * clicked and why — is buried in the middle of it.
+     *
+     * Asked for in characters rather than "be brief", which does not survive
+     * contact with a model mid-reasoning.
+     */
+    '- "thought" is the one line the user reads under each step in the panel, so',
+    '  keep it under about 90 characters: what you are doing and why, in plain',
+    '  words. "[12] is Sign in, so press it" — not a paragraph of reasoning, not',
+    '  a restatement of the observation. Think as long as you like before you',
+    '  write it; what goes in the field is the caption, not the thinking.',
     '- EVERY reply must contain the JSON block, including the last one. Prose on',
     '  its own is not an answer — it is a turn that did nothing. If you are ready',
     '  to answer, that is {"action":"finish","answer":"…"}.',
