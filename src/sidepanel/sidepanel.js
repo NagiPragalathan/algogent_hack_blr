@@ -26,6 +26,7 @@ import { bindEvents } from './app/events.js';
 import { watchTheme } from './ui/theme.js';
 import { initWallet } from './ui/wallet.js';
 import { initPayments, loadListing } from './payments/x402.js';
+import { initAutoPay } from './payments/auto-pay.js';
 
 /** How long to wait for the worker before saying it is not there. */
 const WORKER_TIMEOUT_MS = 4000;
@@ -61,6 +62,14 @@ async function boot() {
    * means free. Measured: a two-step Gmail run finished with no receipt at all.
    */
   void loadListing();
+
+  /**
+   * Who pays, and whether per-step charging is on. Asked once, never awaited,
+   * for the same reason as the listing: nothing on the first paint needs it,
+   * and until it answers the panel behaves exactly as it did before — actions
+   * bank for the wallet road, and `settleRun` re-checks at the end.
+   */
+  void initAutoPay();
 
   bindEvents();
   renderThread();
