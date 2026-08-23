@@ -1,0 +1,15 @@
+/* Shared glue so injected SVGs sit right inside their buttons. */
+
+/* SVG icons inherit their button's colour and sit on the text baseline. */
+.icon { display: block; flex: 0 0 auto; }
+.icon-btn, .round-btn, .send-btn { display: grid; place-items: center; }
+.pill-icon, .mode-icon, .caret { display: inline-grid; place-items: center; }
+.caret { opacity: .7; }
+.row-icon {
+  width: 18px; height: 18px; flex: 0 0 auto;
+  display: grid; place-items: center; color: var(--fg-dim);
+}
+.msg-actions button { display: inline-grid; place-items: center; }
+.session-del, .attach-chip button { display: inline-grid; place-items: center; }
+.check { display: inline-grid; place-items: center; }
+.checkbox .icon { stroke-width: 3; }

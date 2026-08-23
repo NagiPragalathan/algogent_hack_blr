@@ -1,0 +1,158 @@
+/* The empty-thread greeting and its suggestion chips. */
+
+/* Greeting sits at the BOTTOM of the empty thread, right above the composer. */
+.greeting { margin-top: auto; padding-bottom: 4px; }
+.greeting h1 {
+  font-size: 27px;
+  line-height: 1.25;
+  font-weight: 400;
+  margin: 0;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.greeting h2 {
+  font-size: 27px;
+  line-height: 1.25;
+  font-weight: 400;
+  margin: 0 0 20px;
+  color: var(--fg);
+}
+
+.chips { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; }
+.chips button {
+  border: 0;
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 9px 16px;
+  color: var(--fg);
+  font-size: 13.5px;
+  text-align: left;
+}
+.chips button:hover { background: var(--surface-2); }
+
+.greeting-mark {
+  width: 46px; height: 46px; margin: 0 auto 14px;
+  display: grid; place-items: center;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--accent);
+}
+.greeting h1 { font-size: 19px; margin: 0 0 6px; text-align: center; }
+.greeting h2 { font-size: 13px; font-weight: 400; color: var(--fg-dim);
+               margin: 0 0 18px; text-align: center; }
+
+.greeting-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 14px auto 0;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg-dim);
+  border-radius: 999px;
+  padding: 7px 16px;
+  font: inherit;
+  font-size: 13px;
+}
+.greeting-new:hover { color: var(--fg); background: var(--surface-2); }
+.greeting { display: flex; flex-direction: column; align-items: center; }
+
+/* --- greeting ----------------------------------------------------------- */
+
+.greeting { justify-content: center; padding: 8px 0 4px; }
+
+.greeting-mark {
+  width: 44px; height: 44px; margin: 0 auto 16px;
+  border-radius: 13px;
+  background: linear-gradient(150deg,
+    color-mix(in srgb, var(--accent) 22%, transparent),
+    color-mix(in srgb, var(--accent-2) 20%, transparent));
+  color: var(--accent);
+  box-shadow: 0 3px 14px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* Plain foreground: a coloured headline competes with the accent used for
+   things that are actually interactive. */
+.greeting h1 { font-size: 18px; font-weight: 600; color: var(--fg); letter-spacing: -.01em; }
+.greeting h2 { font-size: 13px; color: var(--fg-dim); margin-bottom: 20px; }
+
+/* Suggestions as full-width rows rather than centred pills — they read as a
+   list of things you can do, and long labels no longer stagger the layout. */
+.chips { display: flex; flex-direction: column; gap: 7px; width: 100%; }
+.chips button {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 12px;
+  padding: 10px 13px;
+  font: inherit;
+  font-size: 13px;
+  transition: background .12s ease, border-color .12s ease, transform .12s ease;
+}
+.chips button:hover {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  transform: translateY(-1px);
+}
+.chips button:active { transform: none; }
+.chip-icon {
+  width: 28px; height: 28px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--accent);
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.chips button:hover .chip-icon {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+}
+.chip-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.chip-text span { font-size: 12px; color: var(--fg-dim); }
+
+/* --- motion ------------------------------------------------------------- */
+
+/**
+ * The empty state assembles instead of appearing.
+ *
+ * This is the one screen in the panel where a stagger earns its keep: there is
+ * nothing to read yet, so the order things arrive in IS the reading order —
+ * mark, then what this is, then what you could ask it. Everywhere else in the
+ * panel a stagger would be delay dressed up as polish.
+ *
+ * Capped at four steps of 45ms: the last chip is on screen inside 400ms, which
+ * is the point where a deliberate entrance turns into waiting for the UI.
+ */
+@keyframes greet-in {
+  from { opacity: 0; transform: translateY(10px); }
+}
+/* `backwards`, not `both`: the fill is only needed to hold each element out of
+   sight during its delay. Filling forwards would leave the animation
+   contributing after it finished, and an animated value outranks a normal
+   declaration — so a chip's hover lift would stop working. */
+.greeting > :not(.chips),
+.chips button { animation: greet-in var(--dur-3) var(--ease-out) backwards; }
+
+.greeting h1 { animation-delay: 45ms; }
+.greeting h2 { animation-delay: 90ms; }
+/* The suggestions stagger themselves — the container must not fade too, or
+   each chip is faded twice and the row arrives looking washed out. */
+.chips button:nth-child(1) { animation-delay: 135ms; }
+.chips button:nth-child(2) { animation-delay: 180ms; }
+.chips button:nth-child(3) { animation-delay: 225ms; }
+.chips button:nth-child(4) { animation-delay: 270ms; }
+.greeting-new { animation-delay: 315ms; }
+
+/* The mark settles a beat after it lands — the only flourish in the panel, and
+   it is on the one element that is pure identity rather than a control. */
+@keyframes mark-in {
+  from { opacity: 0; transform: translateY(10px) scale(.86); }
+  to { opacity: 1; transform: none; }
+}
+.greeting-mark { animation: mark-in var(--dur-3) var(--ease-out) backwards; }

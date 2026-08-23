@@ -1,0 +1,194 @@
+/*
+ * Writing a skill, and choosing between the files one carries.
+ *
+ * Both surfaces are the sheet from sheets.css with a form or a list dropped
+ * into it, so everything here is either furniture that sheet has no reason to
+ * own (a labelled field, a footer with two buttons) or a way of saying "this
+ * one is taller" — a form with four fields does not fit the 360px a menu does.
+ *
+ * Loaded after sheets.css: the `.skill-edit` height and the file rows override
+ * what a plain sheet declares.
+ */
+
+/* ------------------------------------------------------------ the form --- */
+
+.skill-edit { max-height: min(560px, 80vh); }
+
+.sheet-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 2px 4px 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.field { display: block; }
+.field-label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fg-dim);
+}
+
+.field-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 11px;
+  outline: none;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.field-input::placeholder { color: var(--fg-dim); }
+.field-input:focus {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+}
+
+/* The prompt is the long field and the one people scroll inside; resizing it by
+   hand would fight the sheet's own max-height. */
+.field-area { resize: none; line-height: 1.45; min-height: 74px; }
+
+/* The '/' is part of the control, not of the value: typing it into the box as
+   well produces `//resume`, and stripping a leading slash silently is the kind
+   of correction that makes people distrust the field. */
+.field-slash {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.field-slash i {
+  flex: 0 0 auto;
+  padding: 0 2px 0 4px;
+  font: 13px/1 var(--mono);
+  font-style: normal;
+  color: var(--fg-dim);
+}
+.field-slash .field-input { font-family: var(--mono); font-size: 12.5px; }
+
+/* ------------------------------------------------- a skill's own files --- */
+
+.skill-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+
+.skill-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: 13px;
+}
+.skill-file .row-icon {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.skill-file .sheet-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-file .sub { display: block; font-size: 11.5px; color: var(--fg-dim); margin-top: 1px; }
+.skill-file-drop {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--fg-dim);
+  border-radius: 6px;
+  padding: 3px 5px;
+  line-height: 0;
+}
+.skill-file-drop:hover { color: var(--danger); background: var(--surface); }
+
+.skill-file-empty {
+  padding: 10px 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fg-dim);
+}
+
+/*
+ * What a skill will attach, in the two lists where it is chosen.
+ *
+ * Under the title rather than beside it: the '/' row already spends its right
+ * edge on the command, and a count that has to compete with that is one people
+ * read after they have committed.
+ */
+.skill-files-note {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+#skill-list .skill-files-note { margin-top: 5px; }
+
+/* An image in a picker row shows itself; its contents have no name. */
+.sheet-row .row-icon.has-thumb { padding: 0; overflow: hidden; background: var(--surface-2); }
+.sheet-row .row-icon.has-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ---------------------------------------------------------- the footer --- */
+
+.sheet-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 2px 0;
+  margin-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--fg-dim) 18%, transparent);
+}
+
+.primary-btn,
+.ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 13px;
+  transition: background var(--dur-1) var(--ease), opacity var(--dur-1) var(--ease);
+}
+.primary-btn {
+  border: 0;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.primary-btn:hover { background: color-mix(in srgb, var(--accent) 86%, #000); }
+/* Nothing ticked is not an error state, so the button stays where it is and
+   dims — a disabled control that moves or vanishes reads as a bug. */
+.primary-btn:disabled { opacity: 0.45; }
+.ghost-btn {
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--fg);
+}
+.ghost-btn:hover { background: var(--surface-2); }
+
+/* The "Add files" button sits in the flow of the form, not in a footer. */
+#skill-add-file { font-weight: 500; padding: 6px 11px; }
+#skill-add-file span { line-height: 0; }

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sidebar AI — background frames</title>
+    <style>
+      /* This document is never rendered on screen. The frames are given a
+         realistic viewport anyway: the provider apps are responsive, and a
+         0x0 or hidden frame makes them lay out as if on a phone, collapse the
+         composer, or skip rendering entirely. */
+      html, body { margin: 0; width: 1280px; height: 900px; overflow: hidden; }
+      iframe { width: 1280px; height: 900px; border: 0; display: block; }
+    </style>
+  </head>
+  <body>
+    <div id="frames"></div>
+    <script src="offscreen.js"></script>
+  </body>
+</html>

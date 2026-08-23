@@ -1,0 +1,345 @@
+/* Attaching open tabs: checkboxes, chips, the picker rows. */
+
+/* Attachments queued for the next question. */
+/**
+ * Attachments sit between the sharing bar and the composer, and the sharing bar
+ * ends in `margin-bottom: -10px` — a deliberate tuck so the composer overlaps
+ * its generous bottom padding (see context-bar.css). Whatever comes next has to
+ * absorb that, and until there was a 57px-tall picture in this row, nothing
+ * noticed: a 24px chip lost its top edge under the bar and looked merely tight.
+ * 16px of top padding pays the tuck back, and the stacking context keeps the
+ * row above the bar rather than under it.
+ */
+/**
+ * One line, whatever is in it.
+ *
+ * Wrapping was costing a row of the panel per two attachments — three files and
+ * a picture pushed the composer down by more than the thread had left. This
+ * scrolls sideways instead, the way the composer's own tool row does, so the
+ * dock's height stops depending on how much you attached. The mask is what says
+ * there is more: without it a clipped card looks like a broken one.
+ */
+.attach-chips {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 7px;
+  padding: 14px 4px 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+}
+.attach-chips::-webkit-scrollbar { display: none; }
+.attach-chips > * { flex: 0 0 auto; }
+/**
+ * The armed skill: a command, not a card.
+ *
+ * It is the one attachment that is a way of asking rather than a thing to ask
+ * about, so it does not pretend to be a file — it is short, accent-coloured and
+ * reads as the token it stands in for. Its body is a paragraph; putting that in
+ * the composer is what this replaces.
+ */
+.skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  max-width: 100%;
+  padding: 0 4px 0 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--fg);
+  animation: skill-chip-in var(--dur-3) var(--ease-out);
+}
+@keyframes skill-chip-in {
+  from { opacity: 0; transform: translateY(4px) scale(.96); }
+}
+.skill-chip-cmd {
+  flex: 0 0 auto;
+  font: 12px/1 var(--mono);
+  color: var(--accent);
+}
+.skill-chip-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+.skill-chip-drop {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg-dim);
+  display: grid;
+  place-items: center;
+}
+.skill-chip-drop:hover { color: var(--danger); background: var(--surface-2); }
+
+/* The same token, in the sent message. */
+.msg-skill {
+  font: 12px/1 var(--mono);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 5px;
+  padding: 2px 5px;
+  margin-right: 1px;
+}
+
+/**
+ * The file that went with a sent message.
+ *
+ * Under the bubble and right-aligned with it, so it reads as part of what YOU
+ * sent rather than as a status line about the panel. The state word carries the
+ * colour: an amber "not delivered" is the difference between an answer that
+ * read your CV and one that never saw it, and that is not something to leave to
+ * a tooltip.
+ */
+/* Right-aligned and wrapping: they belong to your message, and four files on
+   one line would push the names out of a 400px panel. */
+.msg-attach-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  align-self: flex-end;
+  max-width: 100%;
+  margin-top: 4px;
+}
+
+.msg-attach {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+.msg-attach svg { flex: none; opacity: 0.75; }
+.msg-attach-name {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+.msg-attach-state { flex: none; }
+.msg-attach.sent .msg-attach-state { color: var(--ok, var(--accent)); }
+.msg-attach.failed { border-color: color-mix(in srgb, var(--warn, #d98b2b) 45%, var(--border)); }
+.msg-attach.failed .msg-attach-state { color: var(--warn, #d98b2b); }
+
+/* Still going. The same pulse the pending states use, not a spinner: it is a
+   second or two, and a spinner that brief reads as an error. */
+.msg-attach.sending .msg-attach-state { animation: attach-pulse 1.4s ease-in-out infinite; }
+@keyframes attach-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg-attach.sending .msg-attach-state { animation: none; }
+}
+
+/**
+ * One card shape for every attachment, at the picture's height.
+ *
+ * A 57px thumbnail beside a 24px pill is not a row — it is two rows that
+ * happen to overlap, and the eye reads the mistake before it reads the
+ * contents. Files and picked elements are cards now: what it is on top, where
+ * it came from underneath, and the same remove button in the same corner.
+ */
+.attach-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 44, not 57: two lines of text need about 34px, and the rest was padding
+     bought at the cost of the thread above it. */
+  height: 44px;
+  min-width: 0;
+  max-width: 190px;
+  padding: 0 6px 0 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.attach-card:hover { border-color: var(--line-strong); background: var(--surface-2); }
+
+.attach-card-icon {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--accent);
+}
+.attach-card:hover .attach-card-icon {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
+}
+
+/* A pasted picture in the icon's place — `cover` because the badge is square
+   and a screenshot never is; letterboxing it into 26px shows nothing at all. */
+.attach-card-icon.has-thumb { padding: 0; overflow: hidden; }
+.attach-card-icon.has-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.attach-card-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.attach-card-title,
+.attach-card-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attach-card-title { font-size: 12px; line-height: 1.35; color: var(--fg); }
+.attach-card-meta { font-size: 10.5px; line-height: 1.35; color: var(--fg-dim); }
+
+.attach-card-drop {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg-dim);
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.attach-card:hover .attach-card-drop,
+.attach-card-drop:focus-visible { opacity: 1; }
+.attach-card-drop:hover { color: var(--danger); background: var(--surface-3); }
+@media (hover: none) {
+  .attach-card-drop { opacity: 1; }
+}
+
+/**
+ * The picture attachment is a picture.
+ *
+ * A dragged crop has no name — "selection" would be the label on every one of
+ * them — so seeing it is the only way to know the right box was dragged before
+ * the question goes out. 4:3 and 76px wide is the smallest that stays legible
+ * for both a wide screenshot and a tall one; `cover` from the top-left keeps
+ * the part people aimed at, since a selection is dragged around its subject.
+ */
+.shot-tile {
+  position: relative;
+  width: 60px;
+  height: 44px;
+  flex: 0 0 auto;
+  line-height: 0;
+}
+.shot-tile img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: top left;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-1);
+  cursor: zoom-in;
+  transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease);
+}
+.shot-tile:hover img { transform: scale(1.04); box-shadow: var(--shadow-2); }
+
+/**
+ * The dimensions, on hover only.
+ *
+ * On a 60px tile a permanent badge covered a third of the picture — which is
+ * the one attachment whose whole job is being looked at. The number is still on
+ * the tooltip, in the hint under the composer, and across the bottom of the
+ * full-size view; it does not also need to be on the thumbnail.
+ */
+.shot-size {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(8, 11, 18, .72);
+  color: #fff;
+  font: 9.5px/1.5 var(--mono);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease);
+}
+.shot-tile:hover .shot-size { opacity: 1; }
+
+/* Inside the tile, not floating outside it — the chip row clips, and a remove
+   button that is half cut off is one nobody trusts to press. */
+.shot-drop {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(8, 11, 18, .68);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.shot-tile:hover .shot-drop,
+.shot-drop:focus-visible { opacity: 1; }
+.shot-drop:hover { background: var(--danger); }
+/* Nothing hovers on a touchscreen, and this is the only way to undo the pick. */
+@media (hover: none) {
+  .shot-drop { opacity: 1; }
+}
+
+.attach-head { align-items: flex-start; }
+.attach-title { font-size: 11px; letter-spacing: .08em; color: var(--fg-dim); }
+.attach-count { font-size: 12px; color: var(--accent); margin-top: 3px; }
+
+.checkbox {
+  width: 17px; height: 17px; flex: 0 0 auto;
+  border: 1.5px solid var(--line); border-radius: 5px;
+  display: grid; place-items: center;
+  font-size: 11px; color: #fff;
+}
+.attach-row-item[aria-current="true"] .checkbox {
+  background: var(--accent); border-color: var(--accent); color: var(--bg);
+}
+.attach-row-item .check { display: none; }
+
+.attach-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 4px 8px; }
+.attach-row:empty { display: none; }
+
+.chip-favicon {
+  width: 14px; height: 14px; flex: 0 0 auto;
+  background-size: contain; background-repeat: no-repeat; background-position: center;
+}
+.chip-label { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Two-line rows (title + url) hang their icons off the first line; centring
+   them against the block leaves the tick floating between the two lines. */
+.attach-row-item { align-items: flex-start; }
+.attach-row-item .checkbox,
+.attach-row-item .favicon { margin-top: 2px; }
+.attach-row-item .favicon { width: 18px; height: 18px; border-radius: 4px; }
+.attach-row-item .sub { margin-top: 2px; }
+
+.attach-head { padding-top: 8px; }

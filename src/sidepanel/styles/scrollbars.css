@@ -1,0 +1,75 @@
+/* One scrollbar treatment for every scrollable region. */
+
+/* --- scrollbars --------------------------------------------------------- */
+
+/**
+ * Every scroller in the panel, listed once.
+ *
+ * The code block's horizontal bar is the one that was missed, and it was the
+ * most visible bar in the panel: a full-width default scrollbar sitting under
+ * every snippet, thicker than the text above it. A panel this narrow has
+ * scrollers everywhere, so they have to be quiet by default and only firm up
+ * when the pointer is in the region that owns them.
+ */
+.thread, .sheet-list, .drawer-list, #input, .code-block pre, .ctx-preview pre {
+  /* Firefox, which has no ::-webkit-scrollbar. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.thread::-webkit-scrollbar,
+.sheet-list::-webkit-scrollbar,
+.drawer-list::-webkit-scrollbar,
+#input::-webkit-scrollbar,
+.code-block pre::-webkit-scrollbar,
+.ctx-preview pre::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.thread::-webkit-scrollbar-thumb,
+.sheet-list::-webkit-scrollbar-thumb,
+.drawer-list::-webkit-scrollbar-thumb,
+#input::-webkit-scrollbar-thumb,
+.code-block pre::-webkit-scrollbar-thumb,
+.ctx-preview pre::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 99px;
+  /* Transparent border plus `content-box` is what makes a 10px-wide track hold
+     a 6px thumb: there is no other way to inset a scrollbar thumb. */
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* Firm up under the pointer. The thumb is a control; it should be easy to grab
+   once you have gone looking for it, and invisible when you have not. */
+.thread:hover::-webkit-scrollbar-thumb,
+.sheet-list:hover::-webkit-scrollbar-thumb,
+.drawer-list:hover::-webkit-scrollbar-thumb,
+#input:hover::-webkit-scrollbar-thumb,
+.code-block:hover pre::-webkit-scrollbar-thumb,
+.ctx-preview:hover pre::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--fg-dim) 55%, transparent);
+  background-clip: content-box;
+}
+
+.thread::-webkit-scrollbar-thumb:hover,
+.sheet-list::-webkit-scrollbar-thumb:hover,
+.drawer-list::-webkit-scrollbar-thumb:hover,
+#input::-webkit-scrollbar-thumb:hover,
+.code-block pre::-webkit-scrollbar-thumb:hover,
+.ctx-preview pre::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-dim);
+  background-clip: content-box;
+}
+
+.thread::-webkit-scrollbar-track,
+.sheet-list::-webkit-scrollbar-track,
+.code-block pre::-webkit-scrollbar-track,
+.ctx-preview pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Chrome draws a little box where the two bars meet; on a transparent track it
+   is the only opaque thing left. */
+.code-block pre::-webkit-scrollbar-corner { background: transparent; }

@@ -1,0 +1,338 @@
+/* Popovers: the ⋯ menu and the bottom sheets that open above the composer. */
+
+/* ---------------------------------------------------- menus and sheets --- */
+
+.menu {
+  position: absolute;
+  right: 10px;
+  top: 46px;
+  z-index: 30;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .3);
+  padding: 8px;
+  min-width: 232px;
+}
+.menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  border-radius: 10px;
+  font-size: 13.5px;
+}
+.menu button:hover { background: var(--surface-2); }
+.menu hr, .sheet hr { border: 0; border-top: 1px solid var(--line); margin: 6px 6px; }
+
+/* ------------------------------------------------------------ lightbox --- */
+
+/**
+ * The attached picture at full size.
+ *
+ * Inside the panel rather than a new tab: Chrome refuses to navigate to a
+ * `data:` URL from an extension page, and writing the crop to disk to get a URL
+ * for it would leave the picture behind after the question that used it.
+ *
+ * `inset: 0` over the whole panel, because the alternative in 400px is a modal
+ * the size of a postage stamp — the one thing this exists to avoid.
+ */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  animation: lightbox-in var(--dur-3) var(--ease-out);
+  cursor: zoom-out;
+}
+@keyframes lightbox-in { from { opacity: 0; } }
+
+.lightbox img {
+  max-width: 100%;
+  max-height: calc(100% - 52px);
+  object-fit: contain;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-3);
+  cursor: default;
+  animation: lightbox-img-in var(--dur-3) var(--ease-out);
+}
+@keyframes lightbox-img-in { from { opacity: 0; transform: scale(.94) translateY(10px); } }
+
+.lightbox-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--fg-dim);
+  cursor: default;
+}
+.lightbox-bar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Bottom sheets — the "+" tab picker and the provider picker. */
+/**
+ * Sheets open ABOVE the composer, never over it.
+ *
+ * Anchored to the bottom of the dock (their offset parent) rather than to the
+ * panel, so the composer, the sharing bar and as much of the conversation as
+ * will fit all stay on screen. Covering the thread meant losing the thing you
+ * were about to act on — and covering the composer meant losing the caret.
+ */
+/**
+ * Aligned with the composer, not with the panel wall.
+ *
+ * An absolutely positioned child is laid out against the dock's PADDING box,
+ * so `left/right: 0` — which looks like "inherit the dock's padding" — actually
+ * put the sheet flush against both walls of the panel while the composer below
+ * it sat 12px in. The sheet read as part of the window frame, and on the right,
+ * where the thread's scrollbar lands, there was no gap at all.
+ *
+ * Matching the dock's 12px makes the sheet exactly as wide as the composer it
+ * opens from, which is the relationship it should have: the same object, taller.
+ */
+.sheet {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 100%;
+  margin-bottom: 10px;
+  z-index: 30;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-3);
+  padding: 6px 10px 12px;
+  max-height: min(360px, 52vh);
+  display: flex;
+  flex-direction: column;
+  transform-origin: bottom center;
+  animation: rise var(--dur-3) var(--ease-out);
+}
+/* Rises from the control that opened it rather than fading in place: the
+   scale is what ties the sheet to the button below it, and 140ms was short
+   enough that the connection was over before the eye followed it. */
+@keyframes rise { from { transform: translateY(12px) scale(.98); opacity: 0; } }
+
+/* The head keeps its own breathing room and a hairline, so the list below
+   reads as a list rather than as more header. */
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 2px 11px 6px;
+  margin-bottom: 8px;
+  /* --line is the same value as --surface on a sheet, so it would vanish. */
+  border-bottom: 1px solid color-mix(in srgb, var(--fg-dim) 22%, transparent);
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+.sheet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 2px 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.sheet-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 0;
+  background: transparent;
+  border-radius: var(--r-md);
+  text-align: left;
+}
+.sheet-row:hover { background: var(--surface-2); }
+
+/* The leading glyph gets a tile, the way the greeting's suggestions do: a bare
+   16px outline icon next to two lines of text has nothing to sit against. */
+.sheet-row .row-icon {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--accent);
+  transition: background var(--dur-1) var(--ease);
+}
+.sheet-row:hover .row-icon { background: color-mix(in srgb, var(--accent) 16%, var(--surface-2)); }
+.sheet-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+}
+.sheet-row .favicon,
+.sheet-row .dot { flex: 0 0 auto; }
+.sheet-row .sub {
+  display: block;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sheet-row .check {
+  color: var(--accent);
+  opacity: 0;
+  flex: 0 0 auto;
+  transform: scale(.7);
+  transition: opacity var(--dur-1) var(--ease), transform var(--dur-2) var(--ease-out);
+}
+.sheet-row[aria-pressed="true"] .check,
+.sheet-row[aria-current="true"] .check { transform: none; }
+.sheet-row[aria-pressed="true"] .check,
+.sheet-row[aria-current="true"] .check { opacity: 1; }
+
+.favicon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--surface-2) center/contain no-repeat;
+}
+
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pill, var(--fg-dim)); }
+
+.sheet-filter {
+  width: calc(100% - 8px);
+  margin: 0 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.sheet-filter::placeholder { color: var(--fg-dim); }
+.sheet-filter:focus {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+}
+.sheet-empty { padding: 22px 14px; color: var(--fg-dim); font-size: 13px; text-align: center; }
+
+/* The ⋯ menu drops from its button, so it falls rather than rises. Same
+   curve and duration as a sheet: two popovers that open at different speeds
+   read as two different apps. */
+.menu {
+  transform-origin: top right;
+  animation: drop var(--dur-3) var(--ease-out);
+}
+@keyframes drop { from { transform: translateY(-8px) scale(.98); opacity: 0; } }
+
+.sheet-head strong { font-weight: 600; }
+.sheet-row { transition: background var(--dur-1) var(--ease); }
+.sheet-row[aria-current="true"] { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+/* 12px is the floor for a line meant to be read; below it the second line of a
+   row turns into texture and people act on the title alone. */
+.sheet-row .sub { display: block; font-size: 12px; color: var(--fg-dim); margin-top: 1px; }
+.sheet-row-main { min-width: 0; overflow: hidden; }
+.sheet-row-main, .sheet-row .sub { text-overflow: ellipsis; }
+
+/* The provider sheet is anchored to the dock, so open it from the top too. */
+#provider-menu { max-height: min(360px, 52vh); }
+
+/* A row's hit area should not start at the sheet's own edge. */
+.sheet-list > .sheet-row:first-child { margin-top: 2px; }
+.sheet-list > .sheet-row:last-child { margin-bottom: 2px; }
+
+/* The stock hover fill is `--surface`, which is also the sheet's background —
+   so on a sheet, on the menu and on the sharing bar it reads as no hover. */
+.sheet .icon-btn:hover,
+.menu .icon-btn:hover,
+.sharing .icon-btn:hover { background: var(--surface-2); color: var(--fg); }
+
+/* Room for the header's close button without crowding the title. */
+.sheet-head .icon-btn { flex: 0 0 auto; }
+
+/* ---------------------------------------------------------- '/' skills --- */
+
+/**
+ * The typeahead is the same sheet with the furniture stripped out.
+ *
+ * No header: you did not navigate here, you are typing into it, and a title bar
+ * would push the first suggestion below where your eye already is. The footer
+ * stays because the keys are the whole point of the feature — a list you have
+ * to reach for the mouse to use is the menu this replaces.
+ */
+.slash-sheet { padding: 6px 8px 8px; max-height: min(320px, 46vh); }
+
+.slash-row .row-icon { width: 28px; height: 28px; }
+.slash-row.active { background: color-mix(in srgb, var(--accent) 13%, transparent); }
+.slash-row.active .row-icon {
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
+}
+
+/* The command itself, right-aligned: the list doubles as the place you learn
+   what to type next time. */
+.skill-slug {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 10px;
+  font: 11.5px/1 var(--mono);
+  color: var(--fg-dim);
+}
+.slash-row.active .skill-slug { color: var(--accent); }
+
+/* In the browse sheet the slug sits under the title instead, where there is a
+   second line to put it on. */
+#skill-list .skill-slug { display: block; margin: 3px 0 0; padding: 0; }
+
+.slash-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 8px 8px 2px;
+  margin-top: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--fg-dim) 18%, transparent);
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+.slash-key {
+  display: inline-block;
+  min-width: 16px;
+  margin-right: 3px;
+  padding: 2px 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface-2);
+  font: 10px/1.3 var(--mono);
+  text-align: center;
+  color: var(--fg);
+}
+
+/* Provider sheet: the divider needs the same inset as the rows. */
+.sheet hr {
+  margin: 6px 12px;
+  border-top-color: color-mix(in srgb, var(--fg-dim) 22%, transparent);
+}
+.sheet > .sheet-row { margin: 0 2px; width: calc(100% - 4px); }

@@ -1,0 +1,114 @@
+/* Document reset and the defaults every control inherits. */
+
+* { box-sizing: border-box; }
+
+/**
+ * [hidden] is only `display: none` from the user-agent stylesheet, so any class
+ * rule that sets display silently outranks it. Make hidden mean hidden.
+ */
+[hidden] { display: none !important; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+  /* Checkboxes, radios, progress — anything native we do not draw ourselves. */
+  accent-color: var(--accent);
+}
+
+/**
+ * The last two browser defaults that ignore the panel's palette.
+ *
+ * Selection is the one people see constantly — copying an answer paints it in
+ * the browser's own blue, which is a different blue from ours in light mode and
+ * nearly unreadable over a dark bubble. The caret is the same story in the
+ * composer: a white beam on a light surface.
+ */
+::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: var(--fg);
+}
+input, textarea { caret-color: var(--accent); }
+
+button { font: inherit; color: inherit; cursor: pointer; }
+
+.grow { flex: 1 1 auto; }
+
+/**
+ * A file being dragged over the panel.
+ *
+ * Drawn on `body::after` rather than as an element: it must cover the whole
+ * panel including the sheets and the drawer, and it must not be in the layout,
+ * because a real element appearing under the pointer mid-drag fires `dragleave`
+ * on what it covers and the overlay then flickers itself off. `pointer-events:
+ * none` for the same reason.
+ */
+body.dropping::after {
+  content: 'Drop to attach';
+  position: fixed;
+  inset: 8px;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  border: 2px dashed var(--accent);
+  border-radius: var(--r-lg, 14px);
+  background: color-mix(in srgb, var(--accent) 10%, color-mix(in srgb, var(--bg) 88%, transparent));
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  animation: drop-in var(--dur-1, 140ms) var(--ease, ease-out) backwards;
+}
+@keyframes drop-in {
+  from { opacity: 0; transform: scale(0.99); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.dropping::after { animation: none; }
+}
+
+button {
+  cursor: pointer;
+  transition:
+    background var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    opacity var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease);
+}
+button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/**
+ * One press response for every control in the panel.
+ *
+ * A click on a flat button is otherwise invisible until its result arrives —
+ * and the result here can be a second of round trip, which is long enough to
+ * click again. The dip is deliberately tiny (3%): it has to register as
+ * "pressed", not as a bounce. Buttons that move on hover cancel it themselves
+ * (`.chips button:active`) so the two transforms cannot fight.
+ */
+button:active:not(:disabled) { transform: scale(.97); }
+
+/**
+ * Motion is decoration here, never information: every animation in the panel
+ * has a still state that says the same thing, so switching them off costs
+ * nothing. Reduced motion is a vestibular accessibility setting, not a
+ * preference — honour it globally rather than per-file, where the next
+ * animation added would silently miss it.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

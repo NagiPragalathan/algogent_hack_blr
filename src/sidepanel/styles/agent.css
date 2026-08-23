@@ -1,0 +1,958 @@
+/* Agent mode: the toggle, the step timeline, the approval gate. */
+
+/* ------------------------------------------------------------------ agent -- */
+
+/* Off by default and visibly inert; lit only while agent mode is armed, so
+   "can this click things right now?" is answerable at a glance. */
+.mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg-dim);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.mode-btn:hover { background: var(--surface-2); color: var(--fg); }
+.mode-btn .mode-icon { font-size: 11px; }
+.mode-btn[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.msg.assistant.agent .body { margin-top: 10px; }
+
+/* ------------------------------------------------------------- running -- */
+
+/**
+ * What "it is working" looks like.
+ *
+ * Three things move while a run is live and they are one system, not three
+ * effects: the head's dot breathes, an ellipsis counts, and a comet runs down
+ * the timeline rail. Everything else on the card is still — a status surface
+ * that animates in five places reads as broken, not busy.
+ */
+
+.msg-head.working .dot {
+  position: relative;
+  animation: head-breathe 2s cubic-bezier(.16,1,.3,1) infinite;
+}
+.msg-head.working .dot::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  color: var(--accent);
+  opacity: 0;
+  animation: head-ring 2s cubic-bezier(.16,1,.3,1) infinite;
+}
+@keyframes head-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.18); }
+}
+@keyframes head-ring {
+  0%   { opacity: .7; transform: scale(.8); }
+  70%  { opacity: 0;  transform: scale(2.4); }
+  100% { opacity: 0;  transform: scale(2.4); }
+}
+
+/* The counting ellipsis. Fixed width so the label never shifts. */
+.msg-head .ellipsis {
+  display: inline-block;
+  width: 12px;
+  text-align: left;
+  margin-left: -3px;
+}
+.msg-head .ellipsis::after {
+  content: '';
+  animation: ellipsis 1.4s steps(1, end) infinite;
+}
+@keyframes ellipsis {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%, 100% { content: '...'; }
+}
+
+/* The finish: a tick that draws itself, once. */
+.msg-head .tick {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent);
+  position: relative;
+  flex: 0 0 auto;
+}
+.msg-head .tick::after {
+  content: '';
+  position: absolute;
+  left: 4px; top: 2px;
+  width: 3.5px; height: 7px;
+  border: solid #fff;
+  border-width: 0 1.8px 1.8px 0;
+  transform: rotate(42deg);
+}
+.msg-head.just-done .tick { animation: tick-pop 340ms cubic-bezier(.34,1.56,.64,1); }
+@keyframes tick-pop {
+  0%   { transform: scale(0); }
+  60%  { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+.agent-steps {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* The rail is a pseudo-element rather than a border so it can be a gradient
+     that fades at the tail — a hard-stopped 2px line under the last step reads
+     as "the run ended here" even while it is still going. */
+  position: relative;
+}
+.agent-steps::before {
+  content: '';
+  position: absolute;
+  /* The li's -6px margin cancels its 6px padding, so the badge's left edge is
+     the list's own 0 and the centre of a 22px badge is 11px. Half the rail's
+     2px width off that puts it dead centre. */
+  left: 10px;
+  top: 14px;
+  bottom: 14px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--accent) 45%, transparent),
+    var(--line) 85%,
+    transparent
+  );
+}
+
+/* A light running down the rail while the agent is working.
+   Ambient rather than proportional on purpose: the run has no known total —
+   MAX_STEPS is a ceiling, not a plan — so a percentage bar here would be a
+   number we invented. "Something is still happening" is the honest signal. */
+.msg.assistant.agent.running .agent-steps::after {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 0;
+  width: 4px;
+  height: 34px;
+  border-radius: 4px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--accent) 85%, #fff),
+    transparent
+  );
+  filter: blur(.3px);
+  animation: rail-comet 2.6s cubic-bezier(.55,0,.45,1) infinite;
+}
+@keyframes rail-comet {
+  from { transform: translateY(-34px); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { opacity: 1; }
+  to   { transform: translateY(calc(100% + 34px)); opacity: 0; }
+}
+
+/**
+ * A step is a row, not a bullet: glyph on the left, everything else beside it.
+ *
+ * The old list put the text hard against a rail with a dot floating outside
+ * it, so every row looked the same and the eye had nothing to land on. A typed
+ * badge gives each action a shape, and a shape is what makes twenty steps
+ * scannable rather than something you have to read end to end.
+ */
+/**
+ * The vertical rhythm is fixed, not eyeballed.
+ *
+ *   badge      22px
+ *   first line 13px text x 1.5 line-height = 19.5px
+ *
+ * `align-items: start` alone put the badge's TOP against the text's top, so a
+ * 22px badge beside a 19.5px line sat ~1px high on every row — small enough to
+ * look like sloppiness rather than a bug, which is exactly why it reads as
+ * unfinished. `--line1` names that line box so the badge can be centred on it
+ * with arithmetic instead of a magic number.
+ */
+.agent-steps > li {
+  --badge: 22px;
+  --line1: 19.5px;
+
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--badge) 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 6px 8px 7px 6px;
+  margin-left: -6px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  transition: background 180ms ease-out, border-color 180ms ease-out;
+}
+
+/* Hover is a real affordance here: the long ones open, so they have to look
+   touchable before you touch them. */
+.agent-steps > li:hover {
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  border-color: color-mix(in srgb, var(--fg) 7%, transparent);
+}
+
+.agent-glyph {
+  grid-row: 1 / -1;
+  align-self: start;
+  /* Centre the badge on the first line of text, not on the whole block. */
+  margin-top: calc((var(--line1) - var(--badge)) / 2);
+
+  width: var(--badge);
+  height: var(--badge);
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--fg-dim);
+
+  /* Mixed against --bg, not transparent, so the result is OPAQUE. The rail
+     runs behind this column, and a badge with a see-through tint let the line
+     show straight through every icon — one continuous stroke crossing the lot,
+     which is most of what made the column look unresolved. */
+  background: color-mix(in srgb, var(--fg) 7%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+
+  transition: color 180ms ease-out, background 180ms ease-out,
+              border-color 180ms ease-out, transform 180ms cubic-bezier(.16,1,.3,1);
+}
+.agent-glyph .icon { display: block; }
+
+.agent-steps > li.done .agent-glyph {
+  color: color-mix(in srgb, var(--accent) 80%, var(--fg));
+  border-color: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+.agent-steps > li.risky .agent-glyph {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, var(--bg));
+  border-color: color-mix(in srgb, var(--warn) 34%, transparent);
+}
+.agent-steps > li.failed .agent-glyph {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg));
+  border-color: color-mix(in srgb, var(--danger) 36%, transparent);
+}
+
+/* The one that is happening. Lit, slightly larger, with a glow that says
+   "here" without moving anything around it. */
+.agent-steps > li.active {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.agent-steps > li.active .agent-glyph {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+  transform: none;
+  animation: glyph-glow 2s cubic-bezier(.16,1,.3,1) infinite;
+}
+@keyframes glyph-glow {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 42%, transparent); }
+  60%      { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+
+.agent-main { min-width: 0; }
+
+/* The marker. One element, four states, colour carrying the meaning — and a
+   shape difference too, because colour alone is not a signal everyone gets. */
+/* Arrival only — added by agent.js for a step index it has not painted before,
+   never on the re-render that every streamed step triggers. Transform and
+   opacity only, so it composites instead of relaying out the list. */
+.agent-steps > li.enter {
+  animation: agent-step-in 260ms cubic-bezier(.16,1,.3,1) both;
+}
+@keyframes agent-step-in {
+  from { opacity: 0; transform: translate3d(-8px, 3px, 0); }
+}
+
+/* The marker lands a beat after its text, which is what makes a step read as
+   arriving rather than simply existing. Overshoot, because a dot that snaps to
+   size looks like a rendering artefact and one that springs looks placed. */
+.agent-steps > li.enter .agent-glyph {
+  animation: marker-pop 320ms cubic-bezier(.34,1.56,.64,1) 60ms both;
+}
+@keyframes marker-pop {
+  from { transform: scale(0) rotate(-25deg); }
+  to   { transform: scale(1) rotate(0); }
+}
+
+/* The note slides in under its heading rather than appearing with it — the
+   description is what you read first, and staggering by 40ms is enough to make
+   the eye go there. */
+.agent-steps > li.enter .agent-note,
+.agent-steps > li.enter .agent-why {
+  animation: note-in 240ms cubic-bezier(.16,1,.3,1) 40ms both;
+}
+@keyframes note-in {
+  from { opacity: 0; transform: translate3d(0, -3px, 0); }
+}
+
+.agent-what {
+  font-size: 13px;
+  /* Unitless 1.5 of 13px = 19.5px, which is the --line1 the badge is centred
+     on. Change one and the other stops being true. */
+  line-height: 1.5;
+  color: var(--fg);
+  font-weight: 500;
+  letter-spacing: -.005em;
+}
+.agent-steps > li.active .agent-what { color: var(--fg); font-weight: 500; }
+.agent-steps > li.failed .agent-what { color: color-mix(in srgb, var(--danger) 75%, var(--fg)); }
+
+.agent-why {
+  font-size: 12px;
+  color: var(--fg-dim);
+  margin-top: 3px;
+  line-height: 1.5;
+}
+
+.agent-note {
+  font-size: 12px;
+  color: var(--fg-dim);
+  margin-top: 4px;
+  font-family: var(--mono);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* The value that was actually entered. This is the checkable part of a step —
+   "did the right answer go in the right box" — and flat 12px monospace buries
+   it mid-sentence. */
+.agent-value {
+  color: var(--fg);
+  font-weight: 500;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  /* Long pasted values must not push the panel sideways. */
+  overflow-wrap: anywhere;
+}
+.agent-steps > li.failed .agent-value {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-steps > li.enter,
+  .agent-steps > li.enter .agent-glyph,
+  .agent-steps > li.enter .agent-note,
+  .agent-steps > li.enter .agent-why { animation-duration: 1ms; }
+  .agent-steps > li.active .agent-glyph,
+  .msg.assistant.agent.running .agent-steps::after,
+  .msg-head.working .dot,
+  .msg-head.working .dot::after,
+  .msg-head .ellipsis::after,
+  .msg-head.just-done .tick { animation: none; }
+  .agent-steps > li, .agent-glyph { transition: none; }
+  /* Without the counting dots the label has to say it out loud. */
+  .msg-head .ellipsis::after { content: '...'; }
+}
+
+/**
+ * The one blocking thing in the panel, and it must not be scrollable away.
+ *
+ * The run is stopped until this is answered. Scrolled out of sight it becomes a
+ * run that has silently hung — the steps stop arriving, nothing explains why,
+ * and the question sits somewhere above the fold. `sticky` keeps it at the
+ * bottom of the thread's viewport while the reader moves through what led up to
+ * it, which is exactly what someone deciding whether to allow a submit wants to
+ * be able to do.
+ *
+ * Bottom rather than top: the composer is at the bottom and so is the reader's
+ * attention during a run, and a bar pinned to the top of a scrolling thread
+ * covers the step that just happened.
+ *
+ * The opaque background is not decoration either — a sticky element with a
+ * translucent one has the thread scrolling visibly through it.
+ */
+.agent-confirm {
+  position: sticky;
+  bottom: 6px;
+  z-index: 4;
+  margin-top: 12px;
+  padding: 11px 13px 12px;
+  border: 1px solid var(--warn);
+  border-radius: 12px;
+  background:
+    linear-gradient(
+      color-mix(in srgb, var(--warn) 13%, var(--surface-2)),
+      var(--surface-2)
+    );
+  box-shadow:
+    0 8px 26px rgba(0, 0, 0, .34),
+    inset 0 1px 0 color-mix(in srgb, var(--warn) 22%, transparent);
+  animation: confirm-in 320ms cubic-bezier(.16, 1, .3, 1);
+}
+/* It arrives while the eye is elsewhere — on the step that was running — so it
+   has to announce itself. Once, on arrival: `patchAgent` rebuilds this node on
+   every emitted step, and an entrance replayed several times a second is the
+   strobe this file already fixed once for the timeline. */
+@keyframes confirm-in {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+}
+
+.agent-confirm-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+}
+.agent-confirm-pip {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 60%, transparent);
+  animation: confirm-pip 1.8s cubic-bezier(.16, 1, .3, 1) infinite;
+}
+@keyframes confirm-pip {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 55%, transparent); }
+  70%  { box-shadow: 0 0 0 8px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.agent-confirm-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+
+.agent-confirm-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg);
+}
+.agent-confirm-risk {
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--warn) 72%, var(--fg));
+}
+
+.agent-confirm-row { display: flex; gap: 8px; margin-top: 11px; }
+.agent-confirm-row button {
+  flex: 1;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: 9px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 140ms ease-out, border-color 140ms ease-out, transform 140ms ease-out;
+}
+.agent-confirm-row button:hover { background: var(--surface-3); }
+.agent-confirm-row button:active { transform: translateY(1px); }
+.agent-confirm-row button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* "Other" is the escape hatch, not a third equal choice — it opens a box, it
+   does not answer. Quieter, and it does not take a share of the width the two
+   real answers need. */
+.agent-other {
+  flex: 0 0 auto !important;
+  color: var(--fg-dim) !important;
+  border-color: transparent !important;
+}
+.agent-other:hover { color: var(--fg) !important; }
+
+.agent-fields {
+  display: grid;
+  gap: 9px;
+  margin-top: 11px;
+}
+.agent-field { display: grid; gap: 4px; }
+.agent-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+.agent-field-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+textarea.agent-field-input { resize: vertical; min-height: 60px; line-height: 1.45; }
+.agent-field-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+/* Empty until something is missing, so it takes no space in the ordinary case
+   and does not shift the buttons when it appears. */
+.agent-field-missing:not(:empty) {
+  font-size: 12px;
+  color: var(--warn);
+  margin-top: -2px;
+}
+
+.agent-reply { margin-top: 10px; }
+.agent-reply-field {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 52px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.agent-reply-field:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-confirm { animation: none; }
+  .agent-confirm-pip { animation: none; }
+  .agent-confirm-row button { transition: none; }
+  .agent-confirm-row button:active { transform: none; }
+}
+.agent-approve { border-color: var(--accent) !important; color: var(--accent) !important; }
+.agent-decline:hover { border-color: var(--danger); color: var(--danger); }
+
+/* Autonomy choice — only visible while agent mode is armed. */
+.policy-select {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg-dim);
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 12px;
+  max-width: 150px;
+}
+.policy-select:hover { color: var(--fg); }
+
+.msg-head.done { color: var(--accent); }
+
+.agent-steps-toggle {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--fg-dim);
+  margin-top: 8px;
+  list-style: none;
+}
+.agent-steps-toggle::marker, .agent-steps-toggle::-webkit-details-marker { display: none; }
+.agent-steps-toggle::before { content: '▸ '; }
+details[open] > .agent-steps-toggle::before { content: '▾ '; }
+.agent-steps-toggle:hover { color: var(--fg); }
+
+/* Dimmed, not hidden: the control stays findable when agent mode is off. */
+.policy-select.inactive { opacity: .5; }
+
+.policy-select { max-width: 132px; }
+
+/* ---------------------------------------------------------------- fold -- */
+
+/**
+ * The plan arrives as step two and is a dozen lines of prose. Left open it
+ * pushes every actual action off the bottom of a 400px panel, so the timeline
+ * you are watching is mostly a paragraph you have already read.
+ *
+ * A real <details>: opens from the keyboard, is announced as a disclosure, and
+ * the browser's own find-in-page can still reach the text inside it.
+ */
+.agent-fold { margin-top: 4px; }
+
+.agent-fold-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+  color: var(--fg-dim);
+  border-radius: 6px;
+  padding: 1px 0;
+}
+.agent-fold-head::marker,
+.agent-fold-head::-webkit-details-marker { display: none; }
+
+.agent-fold-peek {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  opacity: .75;
+}
+
+/* The affordance carries its own label so it is not a mystery triangle. */
+.agent-fold-more::after {
+  content: 'more ▸';
+  flex: 0 0 auto;
+  font-size: 11px;
+  letter-spacing: .02em;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.agent-fold[open] .agent-fold-more::after { content: 'less ▾'; }
+.agent-fold[open] .agent-fold-peek { display: none; }
+
+.agent-fold-head:hover { color: var(--fg); }
+.agent-fold-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.agent-fold[open] .agent-note {
+  animation: note-in 200ms cubic-bezier(.16,1,.3,1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-fold[open] .agent-note { animation: none; }
+}
+
+/* ------------------------------------------------- the walking pointer -- */
+
+/**
+ * One pointer that travels from the last step to the new one.
+ *
+ * A run is a sequence of things happening in places; a list of boxes appearing
+ * says only that a list grew. Moving a single object down the rail is the same
+ * reason the agent draws a pointer on the page itself — the eye follows an
+ * object, and following it is what reads as movement rather than as output.
+ *
+ * Positioned by `translateY` alone, set from JS in pixels. Not `top`: this
+ * animates on every step of a live run, and transforms composite while `top`
+ * relayouts the whole list under it.
+ */
+.agent-pointer {
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  pointer-events: none;
+  z-index: 3;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .5));
+  will-change: transform;
+}
+.agent-pointer .icon { display: block; }
+
+/* The hop. Expo-out: leaves quickly, settles gently — the shape of something
+   arriving somewhere rather than being dragged there. */
+.agent-pointer.travel {
+  transition: transform 340ms cubic-bezier(.16, 1, .3, 1);
+}
+
+/**
+ * Parked, but alive.
+ *
+ * A hop lasts 340ms and steps arrive ten to forty seconds apart, so for
+ * ninety-something percent of a run the pointer was a still shape — which is
+ * why the movement was easy to miss entirely. Between hops it now breathes on
+ * the spot: the same "still working" signal as the header, on the object the
+ * eye is already following.
+ *
+ * On the inner icon, never on the element itself — the element's transform is
+ * its POSITION, written from JS, and animating it here would fight the hop and
+ * snap the pointer back to the top of the list.
+ */
+.agent-pointer .icon {
+  animation: pointer-idle 2.4s cubic-bezier(.16, 1, .3, 1) infinite;
+}
+@keyframes pointer-idle {
+  0%, 100% { transform: translate(0, 0); }
+  50%      { transform: translate(1.5px, -1.5px); }
+}
+
+/* Landing: a dip and a ring leaving it, the same vocabulary as the pointer
+   drawn on the page, so the two read as the same object in two places. */
+.agent-pointer.arrive::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  animation: pointer-halo 480ms cubic-bezier(.16, 1, .3, 1);
+}
+.agent-pointer.arrive .icon {
+  animation: pointer-dip 260ms cubic-bezier(.16, 1, .3, 1);
+}
+@keyframes pointer-halo {
+  from { opacity: .8; transform: scale(.4); }
+  to   { opacity: 0;  transform: scale(2.6); }
+}
+@keyframes pointer-dip {
+  0%, 100% { transform: scale(1); }
+  45%      { transform: scale(.78); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-pointer.travel { transition: none; }
+  .agent-pointer .icon,
+  .agent-pointer.arrive::after,
+  .agent-pointer.arrive .icon { animation: none; }
+}
+
+/* ------------------------------------------------------- live sub-state -- */
+
+/**
+ * Where the running step is inside its provider round trip.
+ *
+ * A turn is ten to forty seconds and used to show nothing at all while it ran,
+ * so normal latency and a hang looked identical — which is why runs that were
+ * working got stopped. This says which of the four wait states it is parked
+ * on, and they fail for different reasons: `connecting` never reached the
+ * provider, `submitted` is waiting on a reply that may never arrive.
+ */
+.agent-phase {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 8px 4px 7px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  font-size: 11.5px;
+  color: color-mix(in srgb, var(--accent) 72%, var(--fg));
+  animation: note-in 200ms cubic-bezier(.16, 1, .3, 1) both;
+}
+
+/* The one moving part: a pip that fills and empties. Continuous motion is
+   allowed here because that is exactly what this element is — a live
+   indicator that something is still in flight. */
+.agent-phase-pip {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: phase-pip 1.2s cubic-bezier(.16, 1, .3, 1) infinite;
+}
+@keyframes phase-pip {
+  0%, 100% { opacity: .35; transform: scale(.75); }
+  50%      { opacity: 1;   transform: scale(1); }
+}
+
+.agent-phase-text {
+  min-width: 0;
+  position: relative;
+}
+
+/* A caret after the phase text. The panel spends most of a run waiting on a
+   chat window being typed into, and a blinking caret is the one shape everyone
+   already reads as "something is being written right now". */
+.agent-phase-text::after {
+  content: '';
+  display: inline-block;
+  width: 1.5px;
+  height: 11px;
+  margin-left: 3px;
+  vertical-align: -2px;
+  background: currentColor;
+  animation: caret-blink 1.1s steps(1, end) infinite;
+}
+@keyframes caret-blink {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* ------------------------------------------------------------ plan doc -- */
+
+/**
+ * The plan is markdown, so it is rendered as markdown.
+ *
+ * Flat monospace turned a numbered route with bold field names into a wall
+ * nobody reads — and it is the one note worth reading, since every step after
+ * it is the model carrying it out. Tightened well below the panel's body
+ * defaults: this sits inside a step, not at top level, and a plan set at reply
+ * spacing pushes the run off the bottom of the panel.
+ */
+.agent-doc {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--fg-dim);
+}
+.agent-doc > :first-child { margin-top: 0; }
+.agent-doc > :last-child { margin-bottom: 0; }
+.agent-doc p { margin: 0 0 6px; }
+.agent-doc strong { color: var(--fg); font-weight: 600; }
+.agent-doc ol,
+.agent-doc ul { margin: 0 0 6px; padding-left: 18px; }
+.agent-doc li { margin: 0 0 3px; }
+.agent-doc li::marker { color: color-mix(in srgb, var(--accent) 70%, var(--fg-dim)); }
+.agent-doc code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+/**
+ * A step is a DIRECT child of the list, and the selector has to say so.
+ *
+ * `.agent-steps li` is a descendant selector: it matched every `<li>` the
+ * timeline contained, which included the ones inside a plan's own markdown. So
+ * each item of the route was given `display: grid` with the step layout's three
+ * columns — badge, body, elapsed — and its text was laid out in a column about
+ * sixty pixels wide. The plan rendered as a vertical ribbon of single words
+ * inside little boxes, which looks like a broken markdown renderer and is
+ * nothing of the kind: the HTML was clean `<h4>`/`<ol>`/`<li>` the whole time.
+ *
+ * Every one of the step rules is `>` now. This is the trap the panel is most
+ * exposed to — a note is arbitrary markdown from a provider, so any element can
+ * appear inside a step, and a descendant selector meant for the step's own
+ * chrome will find it.
+ *
+ * The defensive block below stays regardless: it costs nothing and it is the
+ * difference between "a plan renders oddly" and "a plan is unreadable" the next
+ * time a shared rule reaches in here.
+ */
+.agent-doc p,
+.agent-doc ol,
+.agent-doc ul { display: block; }
+.agent-doc li { display: list-item; }
+.agent-doc p,
+.agent-doc ol,
+.agent-doc ul,
+.agent-doc li {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  float: none;
+  white-space: normal;
+  overflow-wrap: break-word;
+  border: 0;
+  background: none;
+}
+
+/* h4 is what the renderer actually emits for `##` — the earlier rule stopped at
+   h3, so every plan heading fell back to the browser's default 1em bold with
+   1.33em margins, which is why the sections sat so far apart. */
+.agent-doc h1, .agent-doc h2, .agent-doc h3,
+.agent-doc h4, .agent-doc h5, .agent-doc h6 {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  margin: 10px 0 5px;
+}
+/* The section rule. Three headings in a row with nothing between them reads as
+   a list of words; a hairline is what makes it read as a document. */
+.agent-doc :is(h1, h2, h3, h4, h5, h6) + * { margin-top: 0; }
+.agent-doc :is(h2, h3, h4, h5, h6) {
+  padding-bottom: 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
+/**
+ * A code block here must wrap, not scroll.
+ *
+ * This column is `min-width: 0` — it has to be, or a long note pushes the
+ * timeline sideways — and a `<pre>` with `overflow-x: auto` inside one collapses
+ * to a sliver, wrapping its contents a word at a time. That is what the plan
+ * looked like when the model indented its route and every line became code: a
+ * vertical ribbon of single words, unreadable, and looking like a broken
+ * renderer rather than a format the model chose. `flatten()` in `ui/agent.js`
+ * stops most of it reaching here; this stops the rest from being unreadable.
+ */
+.agent-doc pre {
+  margin: 0 0 6px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+  min-width: 0;
+}
+.agent-doc pre code {
+  background: none;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+/* Whatever the panel's code cards bring with them, they are not a document's
+   furniture — a language label and a Copy button on three words of a route is
+   more chrome than content. */
+.agent-doc .md-code-head,
+.agent-doc .md-copy { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-phase { animation: none; }
+  .agent-phase-pip { animation: none; opacity: 1; }
+  .agent-phase-text::after { animation: none; opacity: 1; }
+}
+
+/* ---------------------------------------------------------- timings --- */
+
+/**
+ * How long each step took, and the run as a whole.
+ *
+ * Right-aligned in its own column so the numbers stack into a readable strip —
+ * a duration inline after the description sits at a different x on every row
+ * and cannot be compared, which is the only thing anyone wants to do with it
+ * ("which step was the slow one?").
+ */
+.agent-steps > li {
+  grid-template-columns: var(--badge) 1fr auto;
+}
+
+.agent-elapsed {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: start;
+  margin-top: calc((var(--line1) - 15px) / 2);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 15px;
+  color: var(--fg-dim);
+  opacity: .65;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding-left: 8px;
+}
+
+/* Still counting. Slightly brighter, and tabular figures so a number going
+   from 9.9s to 10.0s does not shuffle the ones beside it. */
+.agent-elapsed.counting {
+  color: var(--accent);
+  opacity: .9;
+}
+
+.agent-total {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-dim);
+  opacity: .75;
+}

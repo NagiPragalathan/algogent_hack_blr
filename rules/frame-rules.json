@@ -1,0 +1,27 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "responseHeaders": [
+        { "header": "x-frame-options", "operation": "remove" },
+        { "header": "content-security-policy", "operation": "remove" },
+        { "header": "content-security-policy-report-only", "operation": "remove" },
+        { "header": "cross-origin-opener-policy", "operation": "remove" },
+        { "header": "cross-origin-embedder-policy", "operation": "remove" }
+      ]
+    },
+    "condition": {
+      "requestDomains": [
+        "chatgpt.com",
+        "chat.openai.com",
+        "openai.com",
+        "gemini.google.com",
+        "claude.ai",
+        "meta.ai"
+      ],
+      "resourceTypes": ["sub_frame"]
+    }
+  }
+]

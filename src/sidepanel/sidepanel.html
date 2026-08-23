@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sidebar AI</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <span class="convo-title" id="convo-title">New chat</span>
+      <div class="topbar-actions">
+        <button class="provider-pill" id="provider-pill" title="Which assistant answers">
+          <span class="dot" id="provider-dot"></span>
+          <span id="provider-name">ChatGPT</span>
+          <span class="caret" data-icon="chevron" data-icon-size="12"></span>
+        </button>
+        <button id="btn-new" class="text-btn" title="Start a new chat">
+          <span data-icon="compose" data-icon-size="15"></span>
+          <span>New chat</span>
+        </button>
+        <button id="btn-history" class="icon-btn" title="Chat history" data-icon="history"></button>
+        <button id="btn-menu" class="icon-btn" title="More" data-icon="more"></button>
+      </div>
+    </header>
+
+    <div class="menu" id="menu" hidden>
+      <button data-action="compare">Ask every provider</button>
+      <button data-action="open-conversation">Open this chat on the provider site</button>
+      <hr />
+      <button data-action="show-relay">Show provider window</button>
+      <button data-action="hide-relay">Hide provider window</button>
+      <button data-action="close-relay">Close provider window</button>
+      <hr />
+      <button data-action="clear">Clear this conversation</button>
+      <button data-action="options">Settings</button>
+    </div>
+
+    <div class="drawer" id="history" hidden>
+      <div class="drawer-head">
+        <strong>Chat history</strong>
+        <div class="drawer-head-actions">
+          <button class="icon-btn" id="history-clear" title="Delete every saved chat" data-icon="trash"></button>
+          <button class="icon-btn" id="history-close" title="Close" data-icon="close"></button>
+        </div>
+      </div>
+      <div class="drawer-list" id="history-list"></div>
+    </div>
+
+    <main class="thread" id="thread" aria-live="polite"></main>
+
+    <!-- The attached picture, big enough to actually check. A 76px tile proves
+         something was captured; only this proves it was the right thing. -->
+    <div class="lightbox" id="lightbox" hidden>
+      <img id="lightbox-img" alt="The region you selected" />
+      <div class="lightbox-bar">
+        <span id="lightbox-meta"></span>
+        <button class="icon-btn" id="lightbox-close" title="Close (Esc)" data-icon="close"></button>
+      </div>
+    </div>
+
+    <div class="ctx-preview" id="ctx-preview" hidden>
+      <div class="ctx-preview-head">
+        <strong>Context sent to the model</strong>
+        <button class="icon-btn" id="ctx-close" title="Close" data-icon="close"></button>
+      </div>
+      <pre id="ctx-body"></pre>
+    </div>
+
+    <footer class="dock">
+      <!-- Anchored to the dock like the sheets are, so it floats just above the
+           composer instead of over it. Shown only when you have scrolled away
+           from the newest message. -->
+      <button class="to-latest" id="to-latest" title="Jump to the latest message" hidden>
+        <span data-icon="chevron" data-icon-size="14"></span>
+        <span class="to-latest-text">Latest</span>
+      </button>
+
+      <!-- Kept as the single source of truth for "send page context"; the
+           visible control is the ✕ on the sharing bar below. -->
+      <input type="checkbox" id="ctx-on" checked hidden />
+
+      <!-- Where a run went when you switched tabs. The panel follows the tab
+           you are on, so an agent working in another conversation has nothing
+           on screen unless this says so — and a run stopped on a question
+           would otherwise wait for you to happen to come back. -->
+      <section class="running" id="running" hidden>
+        <span class="running-pip" id="running-pip" aria-hidden="true"></span>
+        <button class="running-label" id="running-open">
+          <span id="running-what">Agent working</span>
+          <span class="running-where" id="running-where"></span>
+        </button>
+        <button class="icon-btn tiny" id="running-stop" title="Stop that run" data-icon="stop" data-icon-size="14"></button>
+      </section>
+
+      <section class="sharing" id="context">
+        <span class="sharing-icon" id="ctx-favicon" aria-hidden="true"></span>
+        <button class="sharing-label" id="ctx-chip" title="Preview what gets sent">
+          <span id="ctx-title">Reading page…</span>
+          <span class="sharing-meta" id="ctx-meta"></span>
+        </button>
+        <button class="icon-btn tiny" id="ctx-refresh" title="Re-read this page" data-icon="refresh" data-icon-size="14"></button>
+        <button class="icon-btn tiny" id="ctx-dismiss" title="Stop sharing this page" data-icon="close" data-icon-size="14"></button>
+      </section>
+
+      <div class="composer" id="composer">
+        <!-- The badge layer and the textarea are one control drawn twice: the
+             div paints rounded backgrounds under the @[tab] and /skill tokens,
+             the textarea above it holds the real, editable glyphs. Their
+             typography must stay identical — see composer-ink.js. -->
+        <div class="input-stack">
+          <div class="input-ink" id="input-ink" aria-hidden="true"></div>
+          <textarea
+            id="input"
+            rows="1"
+            placeholder="Ask about this page…"
+          ></textarea>
+        </div>
+
+        <div class="attach-row" id="tab-chips"></div>
+
+        <div class="composer-row">
+          <div class="composer-tools">
+          <button class="round-btn" id="btn-plus" title="Add context" data-icon="plus" data-icon-size="18"></button>
+          <button
+            class="mode-btn"
+            id="btn-agent"
+            aria-pressed="false"
+            title="AI can browse, click, and navigate"
+          >
+            <span class="mode-icon" data-icon="cursor" data-icon-size="13"></span>
+            <span id="agent-label">Agent Mode</span>
+          </button>
+
+          <select
+            id="agent-policy"
+            class="policy-select"
+            title="How often the agent stops to ask you before acting"
+          >
+            <option value="confirm-risky">Key steps</option>
+            <option value="confirm-all">Every step</option>
+            <option value="auto">Never ask</option>
+          </select>
+
+          <button class="pill-btn" id="btn-tabs" title="Attach tabs (or type @)">
+            <span class="pill-icon" data-icon="layers" data-icon-size="14"></span>
+            <span id="tab-count">0</span>
+            <span class="caret" data-icon="chevron" data-icon-size="12"></span>
+          </button>
+
+          </div>
+
+          <div class="composer-actions">
+          <button class="send-btn" id="send" title="Send" data-icon="send" data-icon-size="16"></button>
+          <button class="send-btn stop" id="stop" title="Stop" hidden data-icon="stop" data-icon-size="14"></button>
+          </div>
+        </div>
+      </div>
+
+
+        <div class="sheet" id="plus-menu" hidden>
+          <div class="sheet-head">
+            <strong>Add context</strong>
+            <button class="icon-btn" id="plus-close" title="Close" data-icon="close"></button>
+          </div>
+          <div class="sheet-list">
+            <button class="sheet-row" data-add="skills">
+              <span class="row-icon" data-icon="book"></span>
+              <span class="sheet-row-main">Browse skills<span class="sub">Saved prompts you can reuse</span></span>
+            </button>
+            <button class="sheet-row" data-add="files">
+              <span class="row-icon" data-icon="file"></span>
+              <span class="sheet-row-main">Add files<span class="sub">PDF, Word, images — or text, code, CSV</span></span>
+            </button>
+            <button class="sheet-row" data-add="workspace" id="btn-workspace">
+          <span class="row-icon" data-icon="folder"></span>
+          <span class="sheet-row-main">Workspace folder<span class="sub" id="workspace-sub">No folder chosen</span></span>
+        </button>
+        <button class="sheet-row" data-add="screen">
+              <span class="row-icon" data-icon="crosshair"></span>
+              <span class="sheet-row-main">Select from screen<span class="sub">Its text, or a picture of it</span></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Two ways to point at the same page. The text of an element and a
+             picture of a region answer different questions, and which one you
+             want is not guessable from the click. -->
+        <div class="sheet" id="pick-menu" hidden>
+          <div class="sheet-head">
+            <strong>Select from screen</strong>
+            <button class="icon-btn" id="pick-close" title="Close" data-icon="close"></button>
+          </div>
+          <div class="sheet-list">
+            <button class="sheet-row" data-pick="html">
+              <span class="row-icon" data-icon="code"></span>
+              <span class="sheet-row-main">By HTML<span class="sub">Click an element — its text is sent</span></span>
+            </button>
+            <button class="sheet-row" data-pick="visual">
+              <span class="row-icon" data-icon="crop"></span>
+              <span class="sheet-row-main">By visual<span class="sub">Drag a box — a screenshot of it is sent</span></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="sheet" id="mention-menu" hidden>
+          <div class="sheet-head attach-head">
+            <div>
+              <strong class="attach-title">ATTACH TABS</strong>
+              <div class="attach-count" id="attach-count">No tabs selected</div>
+            </div>
+            <button class="icon-btn" id="mention-close" title="Close" data-icon="close"></button>
+          </div>
+          <input class="sheet-filter" id="tab-filter" placeholder="Type to filter" />
+          <div class="sheet-list" id="tab-list"></div>
+        </div>
+
+        <div class="sheet" id="workspace-menu" hidden>
+          <div class="sheet-head">
+            <strong>Workspace</strong>
+            <button class="icon-btn" id="workspace-close" title="Close" data-icon="close"></button>
+          </div>
+          <div class="sheet-list">
+            <button class="sheet-row" data-workspace="none">
+              <span class="row-icon" data-icon="globe"></span>
+              <span class="sheet-row-main">No workspace<span class="sub">AI works with tabs only</span></span>
+              <span class="check" id="workspace-none-check" data-icon="check" data-icon-size="14"></span>
+            </button>
+            <button class="sheet-row" data-workspace="pick">
+              <span class="row-icon" data-icon="file"></span>
+              <span class="sheet-row-main" id="workspace-label">Choose a folder<span class="sub">Its text files become context</span></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- The '/' typeahead. Same sheet furniture as the pickers, but no
+             header: it is a suggestion list you are typing into, not a place
+             you navigated to. -->
+        <div class="sheet slash-sheet" id="slash-menu" hidden>
+          <div class="sheet-list" id="slash-list"></div>
+          <div class="slash-foot">
+            <span><span class="slash-key">↑</span><span class="slash-key">↓</span> to choose</span>
+            <span><span class="slash-key">Enter</span> to insert</span>
+            <span><span class="slash-key">Esc</span> to dismiss</span>
+          </div>
+        </div>
+
+        <div class="sheet" id="skills-menu" hidden>
+          <div class="sheet-head">
+            <strong>Skills</strong>
+            <div class="drawer-head-actions">
+              <button class="icon-btn" id="skill-save" title="New skill" data-icon="plus"></button>
+              <button class="icon-btn" id="skills-close" title="Close" data-icon="close"></button>
+            </div>
+          </div>
+          <div class="sheet-list" id="skill-list"></div>
+        </div>
+
+        <!-- Writing a skill: the prompt, the command, and the files it carries.
+             Not dismissed by a click elsewhere — a half-written form is worth
+             more than the convenience of closing it by accident. -->
+        <div class="sheet skill-edit" id="skill-edit" hidden>
+          <div class="sheet-head">
+            <strong id="skill-edit-title">New skill</strong>
+            <button class="icon-btn" id="skill-edit-close" title="Close" data-icon="close"></button>
+          </div>
+
+          <div class="sheet-form">
+            <label class="field">
+              <span class="field-label">Name</span>
+              <input id="skill-name" class="field-input" placeholder="Tailor my résumé" />
+            </label>
+
+            <label class="field">
+              <span class="field-label">Command</span>
+              <span class="field-slash">
+                <i>/</i>
+                <input id="skill-cmd" class="field-input" placeholder="resume" spellcheck="false" />
+              </span>
+            </label>
+
+            <label class="field">
+              <span class="field-label">Prompt</span>
+              <textarea
+                id="skill-body"
+                class="field-input field-area"
+                rows="4"
+                placeholder="What should be asked every time this skill is used?"
+              ></textarea>
+            </label>
+
+            <div class="field">
+              <span class="field-label">Reference files</span>
+              <div class="skill-file-list" id="skill-file-list"></div>
+              <button class="ghost-btn" id="skill-add-file">
+                <span data-icon="plus" data-icon-size="13"></span>Add files
+              </button>
+              <input type="file" id="skill-file-input" multiple hidden />
+            </div>
+
+            <button class="sheet-row" id="skill-ask" aria-pressed="true">
+              <span class="sheet-row-main">Choose a file each time<span class="sub" id="skill-ask-sub"></span></span>
+              <span class="check" data-icon="check" data-icon-size="14"></span>
+            </button>
+          </div>
+
+          <div class="sheet-foot">
+            <button class="ghost-btn" id="skill-edit-cancel">Cancel</button>
+            <button class="primary-btn" id="skill-edit-save">Save skill</button>
+          </div>
+        </div>
+
+        <!-- The other half of a '/' command that carries files: which one. -->
+        <div class="sheet" id="skill-pick" hidden>
+          <div class="sheet-head attach-head">
+            <div>
+              <strong class="attach-title" id="skill-pick-title"></strong>
+              <div class="attach-count" id="skill-pick-sub"></div>
+            </div>
+            <button class="icon-btn" id="skill-pick-close" title="Close" data-icon="close"></button>
+          </div>
+          <div class="sheet-list" id="skill-pick-list"></div>
+          <div class="sheet-foot">
+            <button class="ghost-btn" id="skill-pick-skip">Send without a file</button>
+            <button class="primary-btn" id="skill-pick-use">Attach</button>
+          </div>
+        </div>
+
+        <div class="sheet" id="provider-menu" hidden>
+          <div class="sheet-head">
+            <strong>Provider</strong>
+            <button class="icon-btn" id="provider-close" title="Close" data-icon="close"></button>
+          </div>
+          <div class="sheet-list" id="tabs"></div>
+          <hr />
+          <button class="sheet-row" id="btn-compare" aria-pressed="false">
+            <span class="sheet-row-main">Ask every provider</span>
+            <span class="check" id="compare-check" data-icon="check" data-icon-size="14"></span>
+          </button>
+        </div>
+
+      <div class="hint" id="hint"></div>
+      <div class="disclaimer">Answers come from your own provider accounts and can be wrong.</div>
+    </footer>
+
+
+
+
+
+    <!-- Two kinds of file, one picker. Anything in the first group is read here
+         and travels as text in the prompt; anything in the second is handed to
+         the provider's own uploader by the adapter, because a PDF parser per
+         format is not something this extension should be shipping. -->
+    <input type="file" id="file-input" multiple hidden
+      accept=".txt,.md,.markdown,.json,.csv,.tsv,.log,.js,.ts,.jsx,.tsx,.py,.java,.c,.cpp,.cs,.go,.rs,.rb,.php,.html,.css,.xml,.yml,.yaml,.sql,.sh,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.rtf,.odt,.png,.jpg,.jpeg,.gif,.webp,.avif,.heic,.svg" />
+
+
+    <!-- Suggestion chips live inside the greeting; kept here for the click handler. -->
+    <template id="quick-template">
+      <div class="chips" id="quick">
+        <button data-prompt="Summarise this page in 5 concise bullet points.">
+          <span class="chip-icon" data-icon="book" data-icon-size="15"></span>
+          <span class="chip-text">Summarise this page<span>The gist in five bullets</span></span>
+        </button>
+        <button data-prompt="What are the key takeaways and any action items on this page?">
+          <span class="chip-icon" data-icon="check" data-icon-size="15"></span>
+          <span class="chip-text">Key takeaways<span>Points and action items</span></span>
+        </button>
+        <button data-prompt="Explain the selected text in plain language. If nothing is selected, explain the hardest part of this page.">
+          <span class="chip-icon" data-icon="crosshair" data-icon-size="15"></span>
+          <span class="chip-text">Explain the selection<span>Or the hardest part</span></span>
+        </button>
+        <button data-prompt="List every claim on this page a careful reader should verify, and say why.">
+          <span class="chip-icon" data-icon="globe" data-icon-size="15"></span>
+          <span class="chip-text">What should I verify?<span>Claims worth checking</span></span>
+        </button>
+      </div>
+    </template>
+
+    <script type="module" src="sidepanel.js"></script>
+  </body>
+</html>

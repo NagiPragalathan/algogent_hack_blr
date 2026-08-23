@@ -1,0 +1,336 @@
+/* The dock: input, tool row, send button, hint, disclaimer. */
+
+/* ----------------------------------------------------------------- dock --- */
+
+.dock { flex: 0 0 auto; padding: 0 12px 10px; }
+
+.composer {
+  position: relative;
+  z-index: 1;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  padding: 10px 10px 9px;
+  box-shadow: var(--shadow-1);
+}
+
+#input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  max-height: 150px;
+  padding: 4px 6px 8px;
+}
+#input::placeholder { color: var(--fg-dim); }
+
+/* ------------------------------------------------------- badges in the box --
+ *
+ * Two layers, one control. `.input-ink` sits behind the textarea and paints a
+ * rounded background under the `@[tab]` and `/skill` runs; the textarea keeps
+ * the real glyphs, the caret and every selection behaviour the platform gives
+ * us for free.
+ *
+ * Every property below that is duplicated between the two is load-bearing: the
+ * layers only line up while their typography and box model are identical, and a
+ * single pixel of difference in padding or line-height slides every badge off
+ * the words it belongs to a little further down each line. If you change one,
+ * change the other. `font: inherit` on both is what keeps that honest.
+ */
+.input-stack { position: relative; }
+
+.input-ink {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Matches #input exactly. */
+  padding: 4px 6px 8px;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  /* Invisible on its own: only the badge backgrounds are meant to show, and
+     doubled glyphs behind real ones read as a rendering fault. */
+  color: transparent;
+}
+
+.input-ink .tok {
+  border-radius: 5px;
+  /* Padding would move the text off the glyphs above it, so the badge is grown
+     with a spread-only shadow instead — it paints outside the box without
+     taking any layout space at all. */
+  box-shadow: 0 0 0 2px var(--tok-bg);
+  background: var(--tok-bg);
+}
+.input-ink .tok-tab {
+  --tok-bg: color-mix(in oklab, var(--accent) 20%, transparent);
+}
+.input-ink .tok-skill {
+  --tok-bg: color-mix(in oklab, var(--accent-2) 22%, transparent);
+}
+
+/* Above the layer, and transparent so the badges show through. */
+#input { position: relative; background: transparent; }
+
+.composer-row { display: flex; align-items: center; gap: 8px; }
+
+.round-btn {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: 19px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+.round-btn:hover { background: var(--surface-2); color: var(--fg); }
+
+.provider-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-dim);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 13px;
+}
+.provider-pill:hover { background: var(--surface-2); color: var(--fg); }
+.provider-pill .caret { font-size: 11px; }
+
+.send-btn {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+.send-btn:disabled { opacity: .4; cursor: default; }
+.send-btn.stop { background: var(--danger); }
+
+.hint { min-height: 0; padding: 6px 6px 0; font-size: 12px; color: var(--fg-dim); }
+.hint:empty { display: none; }
+.hint.error { color: var(--danger); }
+.hint.warn { color: var(--warn); }
+
+.disclaimer {
+  padding: 7px 6px 0;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  text-align: center;
+}
+
+/* One line when empty; the JS floor and cap do the rest. */
+#input { height: 30px; min-height: 30px; max-height: 120px; overflow-y: hidden; display: block; }
+
+.pill-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 1px solid var(--line); background: transparent;
+  color: var(--fg-dim); border-radius: 999px;
+  padding: 5px 9px; font-size: 12px;
+}
+.pill-btn:hover { color: var(--fg); background: var(--surface-2); }
+.pill-btn.active { color: var(--accent); border-color: var(--accent); }
+.pill-icon { font-size: 12px; }
+
+/* ------------------------------------------------------------- composer -- */
+
+.dock { position: relative; }
+
+/* The tool cluster gives way; the send button never does. In a narrow panel
+   these scroll sideways rather than wrapping and pushing send out of reach. */
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+.composer-tools::-webkit-scrollbar { display: none; }
+.composer-tools > * { flex: 0 0 auto; }
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+/* Native select chrome does not match anything else in the panel; strip it and
+   draw our own caret so the closed state reads as one of the pills. */
+.policy-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 5px 24px 5px 11px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239aa0a6' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  cursor: pointer;
+}
+/* Honoured on the platforms that let CSS reach the popup at all; on the rest,
+   `color-scheme` in tokens.css is what makes the list dark. Both are needed —
+   neither works everywhere. */
+.policy-select option { background: var(--bg); color: var(--fg); }
+
+.composer:focus-within { outline: 1px solid var(--accent); outline-offset: 0; }
+.send-btn { border-radius: 50%; width: 32px; height: 32px; }
+
+/* Tighter tools so they fit a 400px panel without scrolling. */
+.mode-btn { padding: 5px 10px; font-size: 12px; }
+.policy-select { font-size: 12px; padding: 5px 22px 5px 9px; max-width: none; }
+
+/* The caret is a data URI, so its colour cannot be `currentColor` — it is
+   painted per scheme instead. One fixed grey read as either too faint or too
+   loud depending on the theme, which is the one thing a chevron must not do. */
+@media (prefers-color-scheme: dark) {
+  .policy-select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239aa1ac' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+}
+@media (prefers-color-scheme: light) {
+  .policy-select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235b6169' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+}
+.pill-btn { padding: 5px 8px; }
+.provider-pill { padding: 5px 8px; font-size: 12px; }
+.round-btn { width: 28px; height: 28px; }
+
+/* When they still do not fit, fade the edge so it is clear more is there. */
+.composer-tools {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+}
+.composer-tools:not(:hover) { scroll-behavior: smooth; }
+
+.composer {
+  transition:
+    box-shadow var(--dur-2) var(--ease),
+    border-color var(--dur-2) var(--ease),
+    background var(--dur-2) var(--ease);
+}
+/* Focus lifts the composer off the page rather than drawing a ring on it: the
+   panel's whole job starts here, and a 1px outline is what every other input on
+   the web does. */
+.composer:focus-within {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: var(--bg);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent),
+    var(--shadow-2);
+}
+
+.send-btn {
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent-2) 55%, var(--accent)));
+  color: var(--on-accent);
+  border: 0;
+  box-shadow: var(--shadow-1);
+  transition:
+    background var(--dur-1) var(--ease),
+    filter var(--dur-1) var(--ease),
+    opacity var(--dur-2) var(--ease),
+    transform var(--dur-1) var(--ease);
+}
+.send-btn:hover { filter: brightness(1.08); box-shadow: var(--shadow-2); }
+.send-btn.stop { background: var(--danger); color: var(--bg); }
+
+/* Send is the one button in the panel that is pressed without looking, so it
+   gets a deeper dip than the shared 3% — and a disabled one must not move at
+   all, or an empty composer looks like it accepted the click. */
+.send-btn:active:not(:disabled) { transform: scale(.92); }
+.send-btn:disabled { transform: none; }
+
+/* ------------------------------------------------------- work in flight --- */
+
+/**
+ * The composer says whether anything is running, wherever you are scrolled.
+ *
+ * `overflow: hidden` is what keeps the line inside the rounded top edge; the
+ * focus ring is a box-shadow on the element itself, so it is not clipped by it.
+ */
+.composer { overflow: hidden; }
+.composer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  border-radius: 2px;
+  opacity: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent),
+    color-mix(in srgb, var(--accent-2) 70%, var(--accent)),
+    transparent
+  );
+  transition: opacity var(--dur-2) var(--ease);
+  pointer-events: none;
+}
+.composer.busy::before {
+  opacity: 1;
+  animation: track 1.5s var(--ease) infinite;
+}
+@keyframes track {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+/**
+ * Determinate while a deep read is counting parts.
+ *
+ * Same line, filled left to right instead of sweeping: a sweep that keeps
+ * looping says "still working" but never "nearly done", and a six-turn read is
+ * exactly when the difference matters. `--progress` is set by `composer.js`.
+ */
+.composer.measured::before {
+  animation: none;
+  transform: scaleX(var(--progress, 0));
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: transform var(--dur-3) var(--ease), opacity var(--dur-2) var(--ease);
+}
+
+/**
+ * Stop pulses while it is the live control. It replaces Send in the same spot,
+ * and a still red circle reads as a disabled button rather than as the way out.
+ */
+@keyframes stop-ring {
+  from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 50%, transparent); }
+  to { box-shadow: 0 0 0 9px transparent; }
+}
+.send-btn.stop:not([hidden]) {
+  animation:
+    send-swap var(--dur-2) var(--ease-out),
+    stop-ring 1.7s var(--ease) .2s infinite;
+}
+
+/**
+ * Stop replaces Send in place. Fading it in stops the swap reading as a
+ * flicker: the two buttons are the same size in the same spot, so without it
+ * the only thing that changes is the colour, and a red flash where a blue
+ * button was looks like an error rather than a control.
+ */
+@keyframes send-swap { from { opacity: 0; transform: scale(.82); } }
+
+/* 11.5px is below the floor for anything anyone is expected to read, and this
+   line is the panel's only standing warning about accuracy. */
+.disclaimer { font-size: 12px; }

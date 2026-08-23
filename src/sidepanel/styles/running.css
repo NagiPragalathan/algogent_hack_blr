@@ -1,0 +1,94 @@
+/*
+ * The "still working over there" bar.
+ *
+ * Sits above the sharing bar, in the one strip of the panel that is always in
+ * view whatever the thread is doing. It has to read as a *notice* rather than
+ * as part of the conversation on screen — everything else in this column
+ * describes the chat you are looking at, and this describes one you are not —
+ * so it is the only surface in the panel with a tinted background and a rule
+ * along its top.
+ */
+
+.running {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px 7px 12px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface));
+  position: relative;
+  z-index: 1;
+}
+.running[hidden] { display: none; }
+
+/*
+ * The pip is the only continuous animation this bar is allowed.
+ *
+ * Same rule as the agent timeline: exactly one thing moving at a time, and it
+ * is the thing that is actually still happening. A pulsing background or a
+ * travelling stripe here would compete with the run's own indicators inside the
+ * page and inside the thread.
+ */
+.running-pip {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: running-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes running-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.72); }
+}
+
+.running-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 0;
+  font-size: 12.5px;
+  cursor: pointer;
+  overflow: hidden;
+  color: inherit;
+}
+
+#running-what {
+  display: block;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.running-where {
+  display: block;
+  font-size: 11px;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * Blocked on the user, which is a different state and not a louder one.
+ *
+ * A run waiting for an answer will never finish on its own, so it is warm
+ * rather than accent-coloured — and the pip STOPS, because a thing that is
+ * waiting for you should not look like a thing that is making progress.
+ */
+.running.waiting {
+  background: color-mix(in oklab, var(--warn) 14%, var(--surface));
+}
+.running.waiting .running-pip {
+  background: var(--warn);
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Still visible, just not moving — the pip carries the state on its own. */
+  .running-pip { animation: none; }
+}

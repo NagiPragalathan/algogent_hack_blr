@@ -1,0 +1,12 @@
+# Build output from tools/package.mjs. Regenerated, never edited by hand.
+dist/
+sidebar-ai-*.zip
+
+# Packaging dependencies. The extension itself still has none — see AGENTS.md.
+tools/node_modules/
+tools/package-lock.json
+
+# Chrome writes this into an unpacked extension directory; it is not ours.
+_metadata/
+
+.playwright-mcp/

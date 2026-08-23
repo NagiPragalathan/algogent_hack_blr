@@ -1,0 +1,110 @@
+/* Fenced code: the card, its header, and the syntax palette. */
+
+/* ---------------------------------------------------------- code block --- */
+
+/**
+ * A code block is a card, not a grey rectangle in a paragraph.
+ *
+ * The header does two jobs that were both missing: it names the language, so a
+ * snippet can be told apart from output or a stack trace at a glance, and it
+ * carries Copy. Selecting code by hand inside a box that scrolls horizontally,
+ * in a 400px panel, is the kind of thing people give up on and retype.
+ */
+.code-block {
+  margin: 0 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 6px 5px 12px;
+  background: color-mix(in srgb, var(--surface-2) 55%, var(--surface));
+  border-bottom: 1px solid var(--line);
+}
+
+.code-lang {
+  font: 11px/1 var(--mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
+.code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-dim);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.code-copy:hover { background: var(--surface-3); color: var(--fg); }
+.code-copy .icon { display: block; }
+/* Set for a moment by the copy handler — the word changing is the receipt. */
+.code-copy.copied { color: var(--accent); }
+
+/* The card owns the border and the radius now, so the `pre` inside is only a
+   scroll container. */
+.code-block pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 12px 14px;
+}
+
+/* ------------------------------------------------------------- palette --- */
+
+/**
+ * Six roles, not twenty.
+ *
+ * A 400px panel shows maybe fifteen lines of code at a time, and a full
+ * IDE-style theme in that space reads as confetti. Comments recede, strings and
+ * numbers are one family, keywords are the accent, call names are the second
+ * accent, and everything else stays body text — which is also what makes an
+ * unknown language (the `common` rules in lib/highlight.js) look deliberate
+ * rather than unstyled.
+ */
+:root {
+  --tok-com: #6a737d;
+  --tok-str: #0a7c42;
+  --tok-num: #b1560f;
+  --tok-kw: #7c4dff;
+  --tok-fn: #0b57d0;
+  --tok-meta: #a1268c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tok-com: #7f8794;
+    --tok-str: #82d9a4;
+    --tok-num: #f0b47a;
+    --tok-kw: #d3bcff;
+    --tok-fn: #a8c7fa;
+    --tok-meta: #f2a3dd;
+  }
+}
+
+.tok-com { color: var(--tok-com); font-style: italic; }
+.tok-str { color: var(--tok-str); }
+.tok-num { color: var(--tok-num); }
+.tok-kw { color: var(--tok-kw); font-weight: 500; }
+.tok-lit { color: var(--tok-num); font-weight: 500; }
+.tok-fn { color: var(--tok-fn); }
+.tok-prop { color: var(--tok-fn); }
+.tok-sel { color: var(--tok-kw); }
+.tok-tag { color: var(--tok-kw); }
+.tok-attr { color: var(--tok-fn); }
+.tok-var { color: var(--tok-meta); }
+.tok-dec { color: var(--tok-meta); }
+/* Operators and punctuation are structure, not meaning: dimmed, never
+   coloured. Colouring every brace is what makes a theme look busy. */
+.tok-op, .tok-punc { color: var(--fg-dim); }

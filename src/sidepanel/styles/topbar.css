@@ -1,0 +1,93 @@
+/* The header strip: title, provider pill, icon buttons. */
+
+/* -------------------------------------------------------------- top bar --- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 14px;
+  flex: 0 0 auto;
+}
+
+.convo-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--fg);
+}
+
+.topbar-actions { display: flex; gap: 2px; flex: 0 0 auto; }
+
+.icon-btn {
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  line-height: 1;
+  color: var(--fg-dim);
+  display: grid;
+  place-items: center;
+}
+.icon-btn:hover { background: var(--surface); color: var(--fg); }
+.icon-btn.tiny { width: 26px; height: 26px; font-size: 12px; }
+
+/* Labelled topbar action — "New chat" is looked for by name, not by glyph. */
+.text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg-dim);
+  border-radius: 999px;
+  padding: 5px 12px 5px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.text-btn:hover { color: var(--fg); background: var(--surface-2); }
+
+/* ------------------------------------------------------------ elevation --- */
+
+/**
+ * The bar separates itself from the thread only once there is something behind
+ * it to separate from.
+ *
+ * A permanent border draws a line across an empty panel for no reason; a line
+ * that appears the moment the conversation scrolls under it is the same pixel
+ * doing an actual job — it says "there is more above". `.scrolled` is set by
+ * `ui/thread.js`.
+ */
+.topbar {
+  position: relative;
+  z-index: 10;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  box-shadow: 0 1px 0 0 transparent;
+  transition: box-shadow var(--dur-3) var(--ease), background var(--dur-3) var(--ease);
+}
+.topbar.scrolled {
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  box-shadow: 0 1px 0 0 var(--line), var(--shadow-1);
+}
+
+.convo-title { font-weight: 500; letter-spacing: -.005em; }
+
+/* Topbar: title yields, controls never do. */
+.topbar { gap: 8px; }
+.convo-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+.topbar-actions .provider-pill { border: 1px solid var(--line); border-radius: var(--r-pill); }
+.topbar-actions .provider-pill:hover { background: var(--surface-2); }
+
+/* The live provider dot is the panel's only always-visible piece of state, so
+   it gets a ring rather than being a flat 8px circle lost against the pill. */
+.topbar-actions .provider-pill .dot {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pill, var(--fg-dim)) 18%, transparent);
+}

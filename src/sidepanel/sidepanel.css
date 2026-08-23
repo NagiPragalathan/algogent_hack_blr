@@ -1,0 +1,43 @@
+/**
+ * Panel styles, one file per concern.
+ *
+ * The import order is the cascade order, so it is not alphabetical and not
+ * arbitrary: where two files style the same selector, the later one is meant to
+ * win. Three pairs depend on it —
+ *
+ *   agent.css  -> composer.css   `.policy-select` and `.mode-btn` are sized
+ *                                down there to fit a 400px panel
+ *   sheets.css -> tab-picker.css `.attach-row-item` top-aligns rows that
+ *                                sheets.css centres
+ *   thread.css -> agent.css      an agent turn restyles `.msg-head`
+ *   thread.css -> code.css       a fenced block's card owns the `pre` that
+ *                                thread.css styles for bare code
+ *
+ * Everything else is independent. Add new files where they read best and only
+ * think about position if you are overriding something.
+ */
+
+@import url('styles/tokens.css');
+@import url('styles/base.css');
+
+@import url('styles/topbar.css');
+@import url('styles/sheets.css');
+/* After sheets.css: the skill editor is a sheet with a form in it, and both the
+   taller box and the file rows override what a plain sheet declares. */
+@import url('styles/skills.css');
+@import url('styles/drawer.css');
+
+@import url('styles/thread.css');
+/* After thread.css: the code card takes over the `pre` that thread.css styles
+   for bare, un-fenced code. */
+@import url('styles/code.css');
+@import url('styles/greeting.css');
+@import url('styles/running.css');
+@import url('styles/context-bar.css');
+
+@import url('styles/agent.css');
+@import url('styles/tab-picker.css');
+@import url('styles/composer.css');
+
+@import url('styles/icons.css');
+@import url('styles/scrollbars.css');

@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sidebar AI — Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Sidebar AI settings</h1>
+
+      <section class="card">
+        <h2>Appearance</h2>
+
+        <div class="row row-stack">
+          <span>
+            Theme
+            <small>
+              How the side panel is lit. <em>System</em> follows whatever your
+              computer is set to, including switching with it at dusk; the other
+              two hold regardless. This is the panel only — the provider's own
+              page keeps its own theme, which is set in that provider's account.
+            </small>
+          </span>
+          <div class="cursor-grid theme-grid">
+            <label class="cursor-card">
+              <input type="radio" name="panelTheme" value="system" />
+              <span class="theme-swatch tw-system" aria-hidden="true"></span>
+              <span class="cursor-name">System</span>
+              <span class="cursor-best">Follows your OS setting</span>
+            </label>
+            <label class="cursor-card">
+              <input type="radio" name="panelTheme" value="light" />
+              <span class="theme-swatch tw-light" aria-hidden="true"></span>
+              <span class="cursor-name">Light</span>
+              <span class="cursor-best">Always light</span>
+            </label>
+            <label class="cursor-card">
+              <input type="radio" name="panelTheme" value="dark" />
+              <span class="theme-swatch tw-dark" aria-hidden="true"></span>
+              <span class="cursor-name">Dark</span>
+              <span class="cursor-best">Always dark</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="row row-stack">
+          <span>
+            Accent colour
+            <small>
+              The colour used for the send button, links, the provider pill and
+              anything the panel wants you to notice. Each one is a pair — a
+              darker shade for light mode and a lighter one for dark — because a
+              single colour that reads correctly on white is close to invisible
+              on a dark surface. Every pair is checked to stay legible against
+              the surface it lands on.
+            </small>
+          </span>
+          <div class="accent-grid">
+            <label class="accent-card" data-accent="blue">
+              <input type="radio" name="panelAccent" value="blue" />
+              <span class="accent-dot" aria-hidden="true"></span>
+              <span class="accent-name">Default</span>
+            </label>
+            <label class="accent-card" data-accent="teal">
+              <input type="radio" name="panelAccent" value="teal" />
+              <span class="accent-dot" aria-hidden="true"></span>
+              <span class="accent-name">Teal</span>
+            </label>
+            <label class="accent-card" data-accent="violet">
+              <input type="radio" name="panelAccent" value="violet" />
+              <span class="accent-dot" aria-hidden="true"></span>
+              <span class="accent-name">Violet</span>
+            </label>
+            <label class="accent-card" data-accent="rose">
+              <input type="radio" name="panelAccent" value="rose" />
+              <span class="accent-dot" aria-hidden="true"></span>
+              <span class="accent-name">Rose</span>
+            </label>
+            <label class="accent-card" data-accent="amber">
+              <input type="radio" name="panelAccent" value="amber" />
+              <span class="accent-dot" aria-hidden="true"></span>
+              <span class="accent-name">Amber</span>
+            </label>
+            <label class="accent-card" data-accent="green">
+              <input type="radio" name="panelAccent" value="green" />
+              <span class="accent-dot" aria-hidden="true"></span>
+              <span class="accent-name">Green</span>
+            </label>
+            <label class="accent-card" data-accent="slate">
+              <input type="radio" name="panelAccent" value="slate" />
+              <span class="accent-dot" aria-hidden="true"></span>
+              <span class="accent-name">Graphite</span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Behaviour</h2>
+
+        <label class="row">
+          <span>
+            Page context size
+            <small>How much readable page text travels with each question. Larger = better answers, slower, and more likely to hit the provider's message limit.</small>
+          </span>
+          <input type="number" id="maxContextChars" min="500" max="60000" step="500" />
+        </label>
+
+        <label class="row">
+          <span>
+            Deep read size
+            <small>A question scrolls the page to the bottom before reading it, so a lazily-loaded list (a jobs page, a feed, search results) arrives whole instead of first-screenful-only. This is the ceiling on what that gathers.</small>
+          </span>
+          <input type="number" id="deepContextChars" min="2000" max="200000" step="1000" />
+        </label>
+
+        <label class="row">
+          <span>
+            Deep read time limit
+            <small>Milliseconds the page may be scrolled and harvested for. An endless feed has no bottom, so this is what stops it.</small>
+          </span>
+          <input type="number" id="deepReadBudgetMs" min="1000" max="30000" step="500" />
+        </label>
+
+        <label class="row">
+          <span>
+            Read long pages in parts
+            <small>
+              A single turn carrying a very long page gets skimmed, and a skim reads exactly like an answer — "list every Easy Apply job" comes back with two of twenty-five. Reading it part by part first costs one provider turn per part and is what makes those answers complete.
+            </small>
+          </span>
+          <select id="deepRead">
+            <option value="auto">When it matters (long page, or a "list all" question)</option>
+            <option value="always">Whenever the page needs more than one part</option>
+            <option value="off">Never — one turn, however long the page is</option>
+          </select>
+        </label>
+
+        <label class="row">
+          <span>
+            Send page context by default
+            <small>The side panel's "Use this page" switch starts in this position.</small>
+          </span>
+          <input type="checkbox" id="contextOnByDefault" />
+        </label>
+
+        <label class="row">
+          <span>
+            Attach text you highlight
+            <small>
+              Selecting text on a page attaches it to the panel straight away,
+              so you can ask about it without going through <strong>+</strong>.
+              Turn it off if you highlight while reading — right-clicking a
+              selection and choosing <em>Ask Sidebar AI about “…”</em> still
+              works either way.
+            </small>
+          </span>
+          <input type="checkbox" id="captureSelection" />
+        </label>
+
+        <label class="row">
+          <span>
+            Direct API
+            <small>
+              Ask ChatGPT, Gemini, Claude and Meta AI over the same endpoints their own pages call, instead of opening a window and typing into it. Several times faster — nothing to load, nothing to keep awake, and the reply stream ends by itself rather than being read out of the page until it stops changing. Your logins are still what authenticates it; no key, no account, nothing sent anywhere else.<br />
+              <strong>Never open a window</strong> is the default and takes <em>No popup</em> literally: when the engine cannot answer you get the reason instead of a window, and a chat a window has already answered is picked up in a fresh API thread rather than sending you back to the popup — it says so on that answer, because it cannot see the messages above it.<br />
+              <strong>Fall back to a window</strong> is the older behaviour: the question always gets answered, just slower. Worth knowing what it costs before choosing it — a window that answers even once files a conversation URL, and that chat then stays on the window for good, because the ids an API call needs cannot be recovered from a page. One expired token mid-chat is enough to make every later question open a popup, with <em>New chat</em> the only way back.<br />
+              <strong>Always drive the page</strong> rules the transport out entirely, for when a provider starts behaving oddly. Agent runs use a window whatever this says: most engines cannot carry a screenshot.
+            </small>
+          </span>
+          <select id="directTransport">
+            <option value="strict">Never open a window for a “No popup” provider</option>
+            <option value="auto">Fall back to a window when it cannot answer</option>
+            <option value="off">Always drive the page</option>
+          </select>
+        </label>
+
+        <label class="row">
+          <span>
+            Safe hit
+            <small>
+              Holds the direct path back to something one person could produce: a gap between requests that widens with how much this hour has already asked and with how long the last answer was, plus an hourly ceiling past which a provider rests for a while. Turn it off to send as fast as the answers come back.<br />
+              On by default because going direct removed the only rate limit this extension used to have — driving a page takes ten to forty seconds whether anyone wants it to or not, while posting to an endpoint takes one second, so an agent run can put thirty requests through in the time the window managed three. Nobody chose that; it fell out of making things faster.<br />
+              What this does <strong>not</strong> switch off is standing down after a provider answers 429 or 403. That is not caution on our part — it is the provider having said no, and going straight back at it is the one response that reliably makes things worse. Press <em>Check now</em> below to see each provider's last hour.
+            </small>
+          </span>
+          <input type="checkbox" id="safePacing" />
+        </label>
+
+        <div class="row row-stack">
+          <span>
+            How each provider is asked
+            <small>
+              <strong>No popup</strong> asks the provider over its own API — nothing opens, nothing loads, and the reply arrives several times faster. <strong>Popup</strong> drives the page in a window, the way every other provider is driven. Set per provider because they do not break together: an engine can stop working for one while the other three are perfect.<br />
+              <strong>ChatGPT and Gemini are on No popup out of the box</strong>, because their engines carry pictures and documents as well as text — so a chat never has to change transport partway through, and an agent run gets the speed-up too. <strong>Claude and Meta AI start on Popup</strong>: they can answer text this way, but the first attachment sends the conversation to a window and keeps it there. Switch them on here if you want the speed on text-only chats.<br />
+              Only these four can avoid the popup at all. A provider set to <em>No popup</em> that cannot answer that way falls back to the window on its own rather than failing — press <em>Check now</em> to see which are actually working, and why not.
+            </small>
+          </span>
+          <div id="directProviders" class="direct-status"></div>
+          <div>
+            <button id="checkDirect" type="button">Check now</button>
+          </div>
+        </div>
+
+        <label class="row">
+          <span>
+            Provider hosting
+            <small>
+              <strong>Minimized window</strong> is a real tab in a minimized window. A genuine top-level page load, so it looks like ordinary browsing at the network layer — the option least likely to be flagged as automation. Costs one taskbar slot.<br />
+              <strong>Background frames</strong> hides it completely: no window, no tab, nothing in the taskbar. But a framed load announces itself (<code>Sec-Fetch-Dest: iframe</code>, and the page can read <code>window.top !== window.self</code>), and it needs <em>Relax session cookies</em> below. Invisible, but more detectable.
+            </small>
+          </span>
+          <select id="providerMode">
+            <option value="window">Minimized window</option>
+            <option value="embedded">Background frames</option>
+          </select>
+        </label>
+
+        <label class="row">
+          <span>
+            Relax session cookies
+            <small>
+              Background frames are a cross-site context, and <code>SameSite=Lax</code> session cookies are not sent there — so without this the frames show a signed-out page however often you log in. Turning it on rewrites those cookies to <code>SameSite=None</code>.
+              <strong>This weakens CSRF protection on those accounts.</strong> Only needed for background frames.
+            </small>
+          </span>
+          <input type="checkbox" id="relaxCookies" />
+        </label>
+
+        <label class="row">
+          <span>
+            Provider window
+            <small>Only applies to <em>Minimized window</em> hosting. <em>Visible</em> is the setting to use when you are debugging a broken selector.</small>
+          </span>
+          <select id="relayWindowMode">
+            <option value="minimized">Minimized</option>
+            <option value="offscreen">Offscreen</option>
+            <option value="visible">Visible</option>
+          </select>
+        </label>
+
+        <label class="row">
+          <span>
+            Keep the provider awake
+            <small>Chrome slows a hidden page to a crawl, so the provider window is pinned open. <em>Debugger</em> is the only layer that fully lifts the clamp, and it is why Chrome shows the “started debugging this browser” bar. Step down to <em>Soft</em> if that window feels unresponsive when you use it by hand — replies get slower, nothing breaks.</small>
+          </span>
+          <select id="tabWakePolicy">
+            <option value="debugger">Debugger (fastest)</option>
+            <option value="soft">Soft — no debugger</option>
+            <option value="off">Off</option>
+          </select>
+        </label>
+
+        <label class="row">
+          <span>
+            Reply-settled delay (ms)
+            <small>A reply counts as finished once its text stops changing for this long. Raise it if answers get cut off early; lower it if finished answers feel sluggish.</small>
+          </span>
+          <input type="number" id="stabilityMs" min="400" max="10000" step="100" />
+        </label>
+
+        <label class="row">
+          <span>
+            Response timeout (ms)
+            <small>Hard ceiling on a single reply.</small>
+          </span>
+          <input type="number" id="responseTimeoutMs" min="30000" max="1800000" step="10000" />
+        </label>
+
+        <label class="row">
+          <span>
+            Page-ready timeout (ms)
+            <small>How long to wait for a provider tab to boot before giving up.</small>
+          </span>
+          <input type="number" id="readyTimeoutMs" min="5000" max="180000" step="1000" />
+        </label>
+
+        <label class="row">
+          <span>
+            Show what the agent is doing on the page
+            <small>
+              Draws a ring around the element the agent is about to touch, a
+              ripple where it clicked, and a flash when it takes a screenshot —
+              so a page changing under you is visibly the agent's doing rather
+              than the site's. Drawn into the page itself, so turn it off for
+              screen recordings or if it lands awkwardly on a particular site.
+              It never appears in the screenshots the model is sent.
+            </small>
+          </span>
+          <input type="checkbox" id="agentHighlight" />
+        </label>
+
+        <label class="row">
+          <span>
+            Pace the agent so you can watch it
+            <small>
+              Adds a short beat before each action on the page. Without it a
+              batch of eight lands in well under a second — the pointer
+              teleports and the form appears to fill itself with no visible
+              cause. Costs a fraction of a second per action; turn it off if
+              you would rather have the speed than the demonstration.
+            </small>
+          </span>
+          <input type="checkbox" id="agentPacing" />
+        </label>
+
+        <label class="row">
+          <span>
+            Keep the pointer alive while the agent thinks
+            <small>
+              On the page, between actions. Most of a run is spent waiting for
+              the provider — ten to forty seconds in which the page is held, no
+              click works, and nothing moves. A pointer that drifts through that
+              is the difference between a run that looks like it is working and
+              one that looks like it has hung. It only ever moves while the
+              agent actually holds the page, and the next real action travels
+              from wherever it drifted to.
+            </small>
+          </span>
+          <input type="checkbox" id="agentIdleCursor" />
+        </label>
+
+        <label class="row">
+          <span>
+            Walk a pointer through the steps
+            <small>
+              In the side panel, not on the page: a pointer travels from the
+              step that just finished to the one that just started, so a run
+              reads as a sequence of things happening rather than as a list
+              growing. Turn it off if you would rather the panel held still
+              while you read it.
+            </small>
+          </span>
+          <input type="checkbox" id="agentStepPointer" />
+        </label>
+
+        <div class="row row-stack">
+          <span>
+            Page border while the agent drives
+            <small>
+              The mark around the edge of a page the agent has taken control of
+              — the one indicator that is visible wherever you happen to be
+              looking. They differ in how much they move, which is the real
+              choice: the ones that travel are found by the eye immediately and
+              are also the first thing to look wrong in a screen recording.
+              Each preview below runs the actual animation. Turning
+              <em>Show what the agent is doing</em> off removes the border
+              entirely, whichever is picked here.
+            </small>
+          </span>
+          <div class="cursor-grid frame-grid">
+            <label class="cursor-card">
+              <input type="radio" name="agentFrame" value="aurora" />
+              <span class="frame-swatch"><span class="fx aurora"></span></span>
+              <span class="cursor-name">Aurora</span>
+              <span class="cursor-best">Lights the whole edge, not a rule</span>
+            </label>
+            <label class="cursor-card">
+              <input type="radio" name="agentFrame" value="liquid" />
+              <span class="frame-swatch"><span class="fx liquid"></span></span>
+              <span class="cursor-name">Liquid</span>
+              <span class="cursor-best">Colour drifts around the edge</span>
+            </label>
+            <label class="cursor-card">
+              <input type="radio" name="agentFrame" value="glow" />
+              <span class="frame-swatch"><span class="fx glow"></span></span>
+              <span class="cursor-name">Glow</span>
+              <span class="cursor-best">Breathes, never travels</span>
+            </label>
+            <label class="cursor-card">
+              <input type="radio" name="agentFrame" value="pulse" />
+              <span class="frame-swatch"><span class="fx pulse"></span></span>
+              <span class="cursor-name">Pulse</span>
+              <span class="cursor-best">Sheds a wave inward, like radar</span>
+            </label>
+            <label class="cursor-card">
+              <input type="radio" name="agentFrame" value="beam" />
+              <span class="frame-swatch"><span class="fx beam"></span></span>
+              <span class="cursor-name">Beam</span>
+              <span class="cursor-best">A light running the border</span>
+            </label>
+            <label class="cursor-card">
+              <input type="radio" name="agentFrame" value="corners" />
+              <span class="frame-swatch"><span class="fx corners"></span></span>
+              <span class="cursor-name">Corners</span>
+              <span class="cursor-best">Quietest — a viewfinder, not a box</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="row row-stack">
+          <span>
+            Agent pointer
+            <small>
+              The pointer drawn on the page as the agent moves and clicks. This
+              is contrast, not taste: a light pointer disappears on a white form
+              and a dark one disappears on a dark dashboard, and a pointer you
+              cannot see says nothing about what just happened. Each is shown
+              below on both grounds — pick the one you can still see on the
+              sites you actually automate.
+            </small>
+          </span>
+          <div class="cursor-grid">
+            <label class="cursor-card">
+              <input type="radio" name="agentCursor" value="ink" />
+              <span class="cursor-swatch">
+                <span class="on-light"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 1.5l15.5 9.2-6.7 1.3 3.7 7.4-3.1 1.6-3.7-7.4L4 18.6z" fill="#161b2e" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
+                <span class="on-dark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 1.5l15.5 9.2-6.7 1.3 3.7 7.4-3.1 1.6-3.7-7.4L4 18.6z" fill="#161b2e" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
+              </span>
+              <span class="cursor-name">Ink</span>
+              <span class="cursor-best">Best on light pages</span>
+            </label>
+            <label class="cursor-card">
+              <input type="radio" name="agentCursor" value="classic" />
+              <span class="cursor-swatch">
+                <span class="on-light"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 2l14 8.5-6.1 1.2 3.4 6.8-2.8 1.4-3.4-6.8L5 18z" fill="#fff" stroke="#1a56db" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
+                <span class="on-dark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 2l14 8.5-6.1 1.2 3.4 6.8-2.8 1.4-3.4-6.8L5 18z" fill="#fff" stroke="#1a56db" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
+              </span>
+              <span class="cursor-name">Classic</span>
+              <span class="cursor-best">Best on dark pages</span>
+            </label>
+            <label class="cursor-card">
+              <input type="radio" name="agentCursor" value="aurora" />
+              <span class="cursor-swatch">
+                <span class="on-light"><svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="ag-aurora" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff5fa2"/><stop offset=".5" stop-color="#a855f7"/><stop offset="1" stop-color="#ffab3d"/></linearGradient></defs><path d="M4 1.5l15.5 9.2-6.7 1.3 3.7 7.4-3.1 1.6-3.7-7.4L4 18.6z" fill="url(#ag-aurora)" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"/><circle cx="20.5" cy="19" r="1.9" fill="#ff5fa2" opacity=".85"/><circle cx="22.6" cy="15.4" r="1.2" fill="#a855f7" opacity=".6"/></svg></span>
+                <span class="on-dark"><svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="ag-aurora-d" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff5fa2"/><stop offset=".5" stop-color="#a855f7"/><stop offset="1" stop-color="#ffab3d"/></linearGradient></defs><path d="M4 1.5l15.5 9.2-6.7 1.3 3.7 7.4-3.1 1.6-3.7-7.4L4 18.6z" fill="url(#ag-aurora-d)" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"/><circle cx="20.5" cy="19" r="1.9" fill="#ff5fa2" opacity=".85"/><circle cx="22.6" cy="15.4" r="1.2" fill="#a855f7" opacity=".6"/></svg></span>
+              </span>
+              <span class="cursor-name">Aurora</span>
+              <span class="cursor-best">Never mistaken for your own mouse</span>
+            </label>
+            <label class="cursor-card">
+              <input type="radio" name="agentCursor" value="tap" />
+              <span class="cursor-swatch">
+                <span class="on-light"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.6 11V3.6a1.7 1.7 0 013.4 0V10h.6V8.2a1.5 1.5 0 013 0V10h.6V9a1.4 1.4 0 012.8 0v6.4c0 3.4-2.2 5.8-5.6 5.8-2.9 0-4.4-1.2-5.6-3.4l-2-3.7a1.5 1.5 0 012.4-1.7z" fill="#161b2e" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
+                <span class="on-dark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.6 11V3.6a1.7 1.7 0 013.4 0V10h.6V8.2a1.5 1.5 0 013 0V10h.6V9a1.4 1.4 0 012.8 0v6.4c0 3.4-2.2 5.8-5.6 5.8-2.9 0-4.4-1.2-5.6-3.4l-2-3.7a1.5 1.5 0 012.4-1.7z" fill="#161b2e" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
+              </span>
+              <span class="cursor-name">Tap</span>
+              <span class="cursor-best">Reads as clicking, not pointing</span>
+            </label>
+            <label class="cursor-card">
+              <input type="radio" name="agentCursor" value="blade" />
+              <span class="cursor-swatch">
+                <span class="on-light"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 2.2 18.4 11.6a1 1 0 0 1-.42 1.83l-6.06.9-2.6 5.6a1 1 0 0 1-1.9-.3z" fill="#161b2e" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
+                <span class="on-dark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 2.2 18.4 11.6a1 1 0 0 1-.42 1.83l-6.06.9-2.6 5.6a1 1 0 0 1-1.9-.3z" fill="#161b2e" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
+              </span>
+              <span class="cursor-name">Blade</span>
+              <span class="cursor-best">Arrowhead only, no tail</span>
+            </label>
+            <label class="cursor-card">
+              <input type="radio" name="agentCursor" value="halo" />
+              <span class="cursor-swatch">
+                <span class="on-light"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="4.6" fill="none" stroke="#4c8dff" stroke-width="2"/><circle cx="6" cy="6" r="4.6" fill="none" stroke="#fff" stroke-width="0.8"/><circle cx="6" cy="6" r="1.5" fill="#4c8dff"/></svg></span>
+                <span class="on-dark"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="4.6" fill="none" stroke="#4c8dff" stroke-width="2"/><circle cx="6" cy="6" r="4.6" fill="none" stroke="#fff" stroke-width="0.8"/><circle cx="6" cy="6" r="1.5" fill="#4c8dff"/></svg></span>
+              </span>
+              <span class="cursor-name">Halo</span>
+              <span class="cursor-best">Quietest, least in the way</span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Providers &amp; selectors</h2>
+        <p class="note">
+          These sites change their markup without warning. When a provider stops
+          responding, open it with <strong>Provider window → Visible</strong>,
+          inspect the element in DevTools, and put a working CSS selector at the
+          <strong>top</strong> of the matching list below — one selector per
+          line, tried in order. Leave a list untouched to keep the shipped
+          defaults.
+        </p>
+        <div id="providers"></div>
+      </section>
+
+      <div class="actions">
+        <button id="save" class="primary">Save</button>
+        <button id="reset">Reset everything to defaults</button>
+        <span id="status" class="status"></span>
+      </div>
+    </div>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
