@@ -88,6 +88,21 @@ export async function sendToPage(tabId, message, frameId = null) {
 const controlled = new Set();
 
 /**
+ * Tabs whose page has CONFIRMED the curtain is up — a different fact from owning
+ * the tab, and it used to be the same one.
+ *
+ * `controlled` is ownership: `mayUseTab`, the tab-group guard and
+ * `userIsWatching` all read it, so it has to be true the moment a run claims a
+ * tab. Whether the overlay actually went up is a property of a DOCUMENT, and
+ * the send that draws it can land nowhere — mid-navigation, content script not
+ * in yet, a restricted page. That failure was swallowed and the tab marked
+ * controlled anyway, so `takeControl` returned early ever after and the curtain
+ * was never drawn again for the rest of the run. Kept apart, an unconfirmed
+ * curtain is simply retried on the next step.
+ */
+const curtained = new Set();
+
+/**
  * Put the page under the agent's control, or hand it back.
  *
  * The page draws a curtain that takes clicks and says who is driving. Two
@@ -97,10 +112,19 @@ const controlled = new Set();
  * reports something that never happened.
  */
 export async function takeControl(tabId) {
-  if (tabId == null || controlled.has(tabId)) return;
+  if (tabId == null) return;
+
+  const claiming = !controlled.has(tabId);
   controlled.add(tabId);
-  await sendToPage(tabId, { type: 'AGENT_CONTROL', on: true }).catch(() => {});
-  await gatherTabs([...controlled]);
+
+  if (!curtained.has(tabId)) {
+    const ack = await sendToPage(tabId, { type: 'AGENT_CONTROL', on: true }).catch(() => null);
+    // Only a reply proves the page drew anything. `loop.js` calls this every
+    // step, so leaving it unconfirmed is what makes the retry happen.
+    if (ack?.ok) curtained.add(tabId);
+  }
+
+  if (claiming) await gatherTabs([...controlled]);
 }
 
 /**
@@ -224,7 +248,10 @@ export async function followFocus(tabId) {
  */
 export async function retakeControl(tabId) {
   if (tabId == null) return;
-  controlled.delete(tabId);
+  // The document changed and took the overlay with it. Ownership is unchanged,
+  // so only the drawn-ness is forgotten — re-claiming would re-run the tab
+  // grouping on every navigation for nothing.
+  curtained.delete(tabId);
   await takeControl(tabId);
 }
 
@@ -284,6 +311,7 @@ export async function releaseControl() {
   stopWatchingOpenedTabs();
   const tabs = [...controlled];
   controlled.clear();
+  curtained.clear();
   // Before the scatter, so the guard cannot eject a tab out of a group that is
   // about to be dissolved anyway, and so no pulse survives the run.
   endTabSession();

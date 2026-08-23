@@ -680,7 +680,12 @@
   function plan(action) {
     const el = resolve(action);
     if (action.id != null && !el) {
-      return { ok: false, error: `No element [${action.id}] on this page. Observe again.` };
+      return {
+        ok: false,
+        error:
+          `No element [${action.id}] on this page — the ids here run [0]–[${Math.max(0, registry.size - 1)}] ` +
+          `and are renumbered on every observation. Pick one from the list you were just shown.`
+      };
     }
     const label = el ? labelFor(el) : '';
 
@@ -1065,6 +1070,8 @@
 
       /* --- the control curtain --- */
 
+      /* Blocking without the decoration — see takeControl. */
+      .curtain.bare { background: none; }
       .curtain {
         position: fixed;
         inset: 0;
@@ -2197,12 +2204,28 @@
   }
 
   function takeControl() {
-    if (!highlightOn || curtain) return;
+    if (curtain) return;
 
     const shadow = overlayRoot().shadowRoot;
 
+    /**
+     * `agentHighlight` is a VISUAL setting, and it used to gate this whole
+     * function — so turning off a decoration also removed the click blocking at
+     * the bottom of it, and the page stayed live under the agent. Two clicks
+     * landing on one page from two directions is the exact race the curtain
+     * exists to prevent, and it was being switched off by a checkbox whose own
+     * description in Options is the ring, the ripple and the flash, "turn it
+     * off for screen recordings". Nobody unticking that consented to letting
+     * their clicks through. It now takes away the DECORATION and nothing else.
+     *
+     * The pill stays either way, because it is the way out. A curtain that eats
+     * every click with nothing on screen saying why and no exit is worse than
+     * no curtain at all.
+     */
+    const bare = !highlightOn;
+
     curtain = document.createElement('div');
-    curtain.className = 'curtain';
+    curtain.className = bare ? 'curtain bare' : 'curtain';
 
     const frame = document.createElement('div');
     frame.className = `frame ${frameStyle}`;
@@ -2232,10 +2255,13 @@
     });
 
     pill.append(live, text, what, give);
-    curtain.append(frame, topline, pill);
+    if (bare) curtain.append(pill);
+    else curtain.append(frame, topline, pill);
     shadow.append(curtain);
 
-    markFavicon();
+    // The favicon dot is an indicator drawn into the page, so it goes with the
+    // rest of the decoration.
+    if (!bare) markFavicon();
     // The run owns the line now; the still one would sit under the moving one.
     drawPanelLine();
 
@@ -2246,7 +2272,7 @@
      * that used to have nothing on screen moving at all. It rests low and
      * centre, where a hand would be, rather than at the origin.
      */
-    if (idleCursorOn) {
+    if (idleCursorOn && !bare) {
       moveCursor(window.innerWidth * 0.5, window.innerHeight * 0.62, false, true);
       startIdling();
     }
@@ -2509,7 +2535,12 @@
     let el = resolve(action);
 
     if (action.id != null && !el) {
-      return { ok: false, error: `No element [${action.id}] on this page. Observe again.` };
+      return {
+        ok: false,
+        error:
+          `No element [${action.id}] on this page — the ids here run [0]–[${Math.max(0, registry.size - 1)}] ` +
+          `and are renumbered on every observation. Pick one from the list you were just shown.`
+      };
     }
 
     // A coordinate is the other way to name an element. `type` accepts it so

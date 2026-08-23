@@ -81,6 +81,7 @@ import * as gemini from './gemini.js';
 import * as chatgpt from './chatgpt.js';
 import * as claude from './claude.js';
 import * as meta from './meta.js';
+import * as notrack from './notrack.js';
 
 /**
  * Which providers have an engine.
@@ -92,7 +93,8 @@ const ENGINES = {
   [gemini.id]: gemini,
   [chatgpt.id]: chatgpt,
   [claude.id]: claude,
-  [meta.id]: meta
+  [meta.id]: meta,
+  [notrack.id]: notrack
 };
 
 /**
@@ -644,7 +646,8 @@ export async function directStatus(settings, providers = {}) {
           ok: false,
           reason: settings?.providerTransport?.[id]
             ? 'Set to Popup in Options.'
-            : 'Popup by default — this engine carries text only. Switch it to No popup above to try it.'
+            : 'Popup by default — this engine carries text only. Choose No popup above and press ' +
+              'Save to try it.'
         };
       }
 

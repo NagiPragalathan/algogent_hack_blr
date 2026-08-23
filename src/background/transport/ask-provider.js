@@ -5,6 +5,7 @@ import { recoverProvider } from './recover.js';
 import { isEmbedded } from '../state/settings.js';
 import { getConversationUrls } from '../state/conversations.js';
 import { askDirect, warmDirect, directOnly, declineReason } from './direct/index.js';
+import { gate, noteReply } from './direct/pace.js';
 import {
   inflight,
   streamKey,
@@ -263,6 +264,25 @@ export async function askProvider({
   for (let attempt = 1; ; attempt += 1) {
     const lastTry = attempt >= MAX_ATTEMPTS;
 
+    /**
+     * The window road reaches the same endpoint as the fast one, so it gets the
+     * same spacing.
+     *
+     * `pace.js` used to be reachable only from `askDirect`, which left the
+     * extension's whole self-restraint covering one of two roads to one host.
+     * Driving a page is usually slow enough to hide that — until the provider
+     * answers in a second, which notrack.ai does, and until the caller is an
+     * agent run, which is thirty to forty turns with nobody reading anything in
+     * between. Measured on notrack: two requests with no gap between them, and
+     * the second came back 429. A run would have sent forty.
+     *
+     * `gate` only ever delays — it cannot refuse — so this is safe on the road
+     * that exists to answer when the other one will not. It also spaces the
+     * retries, which are real requests to the same host and were previously
+     * sent as fast as the window could be rebuilt.
+     */
+    await gate(provider.id, { intent, safe: settings?.safePacing !== false });
+
     const sink = lastTry
       ? post
       : (msg) => {
@@ -285,7 +305,12 @@ export async function askProvider({
     // Anything but `error` is the caller's business: `done` is an answer,
     // `need_login` needs a human, and a run settled from outside (the user
     // pressed stop) leaves `error` unset — retrying any of those is wrong.
-    if (result.state !== 'error' || lastTry) return result;
+    if (result.state !== 'error' || lastTry) {
+      // Feeds the next gap: how much there is to read before a follow-up could
+      // plausibly be typed. Best-effort, never awaited.
+      if (result.state === 'done') noteReply(provider.id, result.text?.length ?? 0);
+      return result;
+    }
 
     post({
       type: 'ASK_RETRY',

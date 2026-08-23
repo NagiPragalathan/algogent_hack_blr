@@ -12,6 +12,7 @@ import {
 } from './page.js';
 import { listShareableTabs, isUserTabId } from '../state/user-tabs.js';
 import { AGENT_BEAT_MS } from './limits.js';
+import { readUrl } from './read-url.js';
 
 /**
  * Carry out one action and describe what happened.
@@ -437,6 +438,32 @@ async function performBrowserAction({
       report(`Wait ${ms}ms`);
       await new Promise((r) => setTimeout(r, ms));
       return { note: `Waited ${ms}ms.` };
+    }
+
+    /**
+     * Read a page without opening it.
+     *
+     * Costs one request against `navigate`'s page load, curtain, observation
+     * and — on a text-heavy article — a screenshot as well. The model reached
+     * for this on its own (as `http_get`, which has never existed) on exactly
+     * the tasks it suits: follow a search result, read the article, come back.
+     *
+     * It does NOT move the tab, so nothing about the run's position changes and
+     * the text is simply handed back as the step's note. Anonymous — see
+     * `read-url.js`, where that decision is the whole of the safety.
+     */
+    case 'read_url': {
+      report(`Read ${action.url}`);
+      const page = await readUrl(action.url);
+
+      if (!page.ok) return { failed: true, note: page.error };
+
+      return {
+        note:
+          `Read ${page.url}${page.title ? ` — "${page.title}"` : ''}\n\n` +
+          page.text +
+          (page.truncated ? '\n\n[cut off here — navigate to it if you need the rest]' : '')
+      };
     }
 
     case 'navigate':

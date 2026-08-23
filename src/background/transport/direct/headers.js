@@ -27,13 +27,14 @@
  */
 
 /** Ids reserved for these rules. Session rules are replaced, never appended. */
-const RULE_IDS = [9001, 9002, 9003, 9004];
+const RULE_IDS = [9001, 9002, 9003, 9004, 9005];
 
 const ORIGINS = [
   { host: 'chatgpt.com', origin: 'https://chatgpt.com' },
   { host: 'gemini.google.com', origin: 'https://gemini.google.com' },
   { host: 'claude.ai', origin: 'https://claude.ai' },
-  { host: 'www.meta.ai', origin: 'https://www.meta.ai' }
+  { host: 'www.meta.ai', origin: 'https://www.meta.ai' },
+  { host: 'notrack.ai', origin: 'https://notrack.ai' }
 ];
 
 function rulesFor() {

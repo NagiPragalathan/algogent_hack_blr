@@ -172,6 +172,22 @@ export async function runAgent({
   let rejected = 0;
   /** Replies in a row that carried no action. */
   let misreads = 0;
+  /**
+   * The longest prose reply this run produced, kept until the end.
+   *
+   * `misreads >= MAX_MISREADS` already turns prose into the answer, and it only
+   * fires on CONSECUTIVE misreads — `misreads` resets on every action that
+   * parses. A run that researches properly never trips it: it answers in prose,
+   * gets corrected, does another action, answers again. Measured on "open Google
+   * and search for latest AI news": four separate prose replies across 32 steps,
+   * none of them consecutive, one of them a complete summary with headlines —
+   * and the run ended on "Stopped after 32 steps without finishing", throwing
+   * away the answer it had been holding since step fifteen.
+   *
+   * So the best one is kept regardless of whether the misreads line up. It is
+   * only ever used when the run ends with nothing better; a real `finish` wins.
+   */
+  let bestProse = '';
   /** The page as the model was last shown it, for re-sending after a misread. */
   let lastObservation = null;
   /** Whether anything at all has been done to a page in this run. */
@@ -580,6 +596,8 @@ export async function runAgent({
     if (error) {
       misreads += 1;
       const prose = (reply.text || '').trim();
+      // Kept whether or not this misread is consecutive — see `bestProse`.
+      if (prose.length > bestProse.length) bestProse = prose;
 
       /**
        * A model that has answered twice in prose is not going to be nudged into
@@ -661,6 +679,26 @@ export async function runAgent({
        * `finish` with them, because from where it is standing the work is done.
        */
       const answered = answeredInsteadOfActing(acted, prose);
+
+      /**
+       * The third case, and on a research task it is the common one.
+       *
+       * `answered` is a run that has done NOTHING and is talking from memory —
+       * it gets told to go and use the browser. Everything else fell through to
+       * "send the block itself", with an example built from `firstFieldId` or
+       * `firstElementId` — a `type` or a `click`. That is the right nudge for a
+       * fumbled action and the wrong one for a model that has finished: it has
+       * read the pages, it is writing the summary, and it is handed an example
+       * pointing at another control. Measured on the Google-news run: it clicked
+       * into an article, then a journal abstract, then "Full Text (PDF)", each
+       * time after being shown a click example, and never once reached `finish`.
+       *
+       * A long reply from a run that HAS acted is a report, not a fumble. The
+       * correction for it is one line — that is an action too, and here is its
+       * shape — rather than the format lecture, which it did not get wrong.
+       */
+      const reported = acted && !answered && !truncated && prose.length >= READS_AS_A_REPORT;
+
       const field = firstFieldId(lastObservation);
 
       // Re-send what it can act on, with an example built from something that is
@@ -672,13 +710,30 @@ export async function runAgent({
         ? renderObservation(step + 1, { ...lastObservation, text: '' }) + '\n\n'
         : '';
 
-      const example = field
-        ? `{"thought":"search for what the task asks about","action":"type","id":${field},` +
-          '"text":"…","submit":true}'
-        : `{"thought":"why","action":"click","id":${firstElementId(lastObservation)}}`;
+      const example = reported
+        ? '{"thought":"I have what the task asked for","action":"finish",' +
+          '"answer":"…everything you just wrote, in full…"}'
+        : field
+          ? `{"thought":"search for what the task asks about","action":"type","id":${field},` +
+            '"text":"…","submit":true}'
+          : `{"thought":"why","action":"click","id":${firstElementId(lastObservation)}}`;
 
       message = truncated
         ? error + tail()
+        : reported
+          ? // No element list here, deliberately. `shownAgain` is what makes a
+            // stuck run reach for another control, and this run's problem is
+            // that it will not stop reaching. It has the answer; it needs the
+            // door, not the page again.
+            'That reply IS your answer — but it carried no action, so the run cannot end ' +
+            'and the user has not been shown a word of it.\n\n' +
+            'Reporting is an action. Send back exactly what you just wrote, inside a ' +
+            'finish block. Do not shorten it, do not go and check it again, and do not ' +
+            'click anything else:\n\n' +
+            '```json\n' +
+            example +
+            '\n```' +
+            tail()
         : error +
           '\n\n' +
           shownAgain +
@@ -1114,9 +1169,26 @@ export async function runAgent({
       tail();
   }
 
+  /**
+   * Out of steps — which is not the same as having nothing to say.
+   *
+   * This used to be the canned sentence unconditionally, and on a research task
+   * that is the worst possible ending: the run opened pages, read them, wrote a
+   * summary with headlines in it, and the user was shown "Stopped after 32 steps
+   * without finishing" over a fold containing all of the work. The summary was
+   * sitting in `bestProse` the whole time.
+   *
+   * Hedged rather than passed off as a finish, because it is not one: the model
+   * never said it was done, so the last thing it wrote may well be the middle of
+   * the job. Saying so is what separates this from a real `finish`.
+   */
   emit({
     type: 'AGENT_DONE',
-    answer: `Stopped after ${MAX_STEPS} steps without finishing. Ask again with a narrower task.`,
+    answer:
+      bestProse.length >= READS_AS_A_REPORT
+        ? `${bestProse}\n\n_(Ran out of steps after ${MAX_STEPS}. That was the last thing ` +
+          'the assistant wrote rather than a finished answer, so it may be incomplete.)_'
+        : `Stopped after ${MAX_STEPS} steps without finishing. Ask again with a narrower task.`,
     steps: MAX_STEPS
   });
 }
@@ -1438,6 +1510,18 @@ const LOOKS_LIKE_AN_ATTEMPT = /["']?\baction["']?\s*[:=]/i;
  * `LOOKS_LIKE_AN_ATTEMPT`, not length.
  */
 const TOO_SHORT_TO_BE_AN_ANSWER = 80;
+
+/**
+ * Long enough that a run which has ACTED is reporting rather than fumbling.
+ *
+ * Higher than the floor above, and for a different question. That one asks "is
+ * this prose at all"; this one asks "has this run finished and started writing
+ * up". A fumbled action is short — a sentence of narration around a malformed
+ * block — while a report opens with a heading and lists what it found. Set well
+ * above a stray paragraph so an ordinary mid-run stumble still gets the format
+ * correction, which is the one it actually needs.
+ */
+const READS_AS_A_REPORT = 400;
 
 /**
  * A reply that answered the question instead of going to look.

@@ -513,6 +513,138 @@ export const DEFAULT_PROVIDERS = {
       loggedOut: ['a[href*="/auth"]', 'input[name="password"]'],
       ready: ['textarea#chat-input', 'textarea']
     }
+  },
+
+  arena: {
+    id: 'arena',
+    name: 'Arena AI',
+    short: 'ARN',
+    color: '#7c3aed',
+    enabled: true,
+    // Direct mode — one model, one reply. The default landing mode is Battle,
+    // which answers TWICE (Assistant A and Assistant B in a carousel); the panel
+    // would show one of them with no sign the other existed, and an agent run
+    // would get two JSON blocks in one reply. Direct has its own URL, so the
+    // mode is pinned by landing here rather than by driving the mode dropdown.
+    // It requires being signed in to arena.ai — Battle does not.
+    homeUrl: 'https://arena.ai/text/direct',
+    newChatUrl: 'https://arena.ai/text/direct',
+    matches: ['https://arena.ai/*'],
+    submitWith: 'click',
+    /**
+     * Window-only, and deliberately not in DIRECT_PROVIDERS.
+     *
+     * The obvious move is a `direct/arena.js` beside the other four, and it
+     * does not work the way ChatGPT's does. ChatGPT's gate is a SHA3-512
+     * proof of work the client is MEANT to compute, which is why `sentinel.js`
+     * can compute it and still be doing exactly what the page does. Arena's
+     * gate is reCAPTCHA Enterprise wrapped around identity creation — the
+     * bundle carries `create_anonymous_user`, `recaptchaToken`,
+     * `RecaptchaWrappedRequestError` and a `create_anonymous_user_rate_limited`
+     * branch — and a reCAPTCHA token cannot be computed at all. It can only be
+     * obtained by having Google score a real page, so a worker-side engine
+     * would have to harvest tokens out of a hidden page and replay them, which
+     * is the fingerprint work this folder's own notes rule out. The window path
+     * needs none of it: the real tab passes the real challenge itself.
+     *
+     * `composer`, `send` and `attach` were read off the live page. The rest are
+     * best-effort — check them against a real conversation before trusting a
+     * quiet reply.
+     */
+    selectors: {
+      composer: [
+        'textarea[placeholder*="Ask followup"]',
+        'textarea[placeholder*="Ask anything"]',
+        'textarea[placeholder*="What would you like to do"]',
+        'form textarea',
+        'textarea'
+      ],
+      send: [
+        'button[aria-label="Send message"]',
+        'button[aria-label*="Send" i]',
+        'form button[type="submit"]'
+      ],
+      stop: ['button[aria-label*="Stop" i]'],
+      streaming: [],
+      /**
+       * Arena ships NO data attributes anywhere — no `data-testid`, no
+       * `data-message-role`, nothing. Everything is Tailwind, so the reply has
+       * to be addressed structurally.
+       *
+       * `div.prose` alone is wrong: the user's own bubble is a `div.prose` too,
+       * and it is the LAST one in DOM order (see `user` below), so
+       * `latestAssistantText` would hand the panel back the question it had
+       * just asked. The user's prose is the direct child of the
+       * `bg-surface-raised` bubble and the replies are not, which is the one
+       * structural difference that separates them.
+       */
+      assistant: ['div.prose:not(.bg-surface-raised > *)'],
+      /**
+       * EMPTY ON PURPOSE. Do not fill this in.
+       *
+       * Arena renders its thread into an `<ol class="… flex-col-reverse">`, so
+       * the DOM order is the REVERSE of the visual order: the reply is a
+       * PRECEDING sibling of the question it answers. `freshText` resolves a
+       * reply by taking the assistant nodes that FOLLOW the anchored user
+       * message in document order — measured here, that set is empty, so a
+       * populated `user` selector makes every turn return '' and time out with
+       * the answer plainly on screen. That is the "Arena AI did not answer —
+       * reopening its window" loop.
+       *
+       * With no `user` match, `freshText` takes its documented fallback —
+       * newest assistant text, accepted once it differs from what was on screen
+       * before we sent — which needs no document order and is correct here.
+       */
+      user: [],
+      attach: [
+        'button[aria-label="Add files and more"]',
+        'button[aria-label*="Add files" i]',
+        'input[type="file"]'
+      ],
+      loggedOut: ['a[href*="/sign-in"]'],
+      ready: ['textarea']
+    }
+  },
+
+  notrack: {
+    id: 'notrack',
+    name: 'NoTrack',
+    short: 'NT',
+    color: '#22c55e',
+    enabled: true,
+    homeUrl: 'https://notrack.ai/chat',
+    newChatUrl: 'https://notrack.ai/chat',
+    matches: ['https://notrack.ai/*'],
+    submitWith: 'click',
+    /**
+     * The window path, which this provider needs far less than the others: it
+     * has an engine in `background/transport/direct/`, and unlike Arena there
+     * is nothing standing between a worker and the endpoint — no sign-in, no
+     * captcha. This is the fallback for a turn carrying a file (the engine has
+     * no upload flow yet) and for an agent run.
+     *
+     * All of these were read off the live page. The markup is plain and
+     * semantic, and — unlike Arena — DOM order matches visual order, so `user`
+     * can be populated and `freshText` can anchor on it properly.
+     */
+    selectors: {
+      composer: ['textarea#field', 'form textarea', 'textarea'],
+      send: ['button#goBtn', 'button[aria-label="Send"]', 'form button[type="submit"]'],
+      stop: ['button[aria-label*="Stop" i]'],
+      streaming: [],
+      /**
+       * Rows are `.row.usr` for the question and `.row.ag-<speaker>` for an
+       * answer, so the attribute-prefix match takes every speaker without
+       * taking the user. `.message-body` rather than `.bubble` keeps the
+       * speaker label ("NOTRACK") out of the transcribed reply.
+       */
+      assistant: ['.row[class*="ag-"] .message-body', '.row[class*="ag-"] .markdown-body'],
+      user: ['.row.usr .message-body'],
+      attach: ['input[type="file"]', 'button[aria-label*="Attach" i]'],
+      // Nothing to be signed out of, so there is no signed-out state to detect.
+      loggedOut: [],
+      ready: ['textarea#field']
+    }
   }
 };
 
@@ -528,7 +660,9 @@ export const PROVIDER_ORDER = [
   'mistral',
   'kimi',
   'zai',
-  'meta'
+  'meta',
+  'arena',
+  'notrack'
 ];
 
 /**
@@ -540,7 +674,7 @@ export const PROVIDER_ORDER = [
  * engine there is a dropdown that silently does nothing; an engine there with
  * no id here is a provider the user cannot switch. Change one, change the other.
  */
-export const DIRECT_PROVIDERS = ['chatgpt', 'gemini', 'claude', 'meta'];
+export const DIRECT_PROVIDERS = ['chatgpt', 'gemini', 'claude', 'meta', 'notrack'];
 
 /**
  * The engines that skip the window WITHOUT being asked to.

@@ -46,6 +46,7 @@ src/background/          the service worker and everything behind it
       sentinel.js        the proof of work that handshake asks for (SHA3-512)
       claude.js          claude.ai/api — org, conversation, completion
       meta.js            GraphQL persisted queries, account or throwaway
+      notrack.js         no credential at all — plain JSON in, event stream out
       upload.js          a data: URL, turned into the bytes an uploader wants
       headers.js         session rules: look like the page, not like a worker
       pace.js            how often we may ask, and when to stop asking
@@ -58,10 +59,14 @@ src/background/          the service worker and everything behind it
     actions.js           carrying out one action, and the approval gate
     plan.js              the survey turn: whole page in, a route out
     read.js              transcribing one over-long observation, part by part
+    read-url.js          fetching a page's text without opening it (anonymous)
     loop.js              the observe -> decide -> act driver
     run.js               the worker side: one run at a time, provider plumbing
   channel/
     panel.js             the side panel's port, and every message it can send
+
+tests/
+  direct/notrack.test.mjs  the engine driven on a faked stream: node tests/direct/notrack.test.mjs
 
 src/content/             classic content scripts (NOT ES modules — see below)
   page-context.js        text extraction and the element picker
@@ -628,6 +633,49 @@ ever does refuse ours the symptom is one engine failing — which returns null a
 lands on the window path, which is the designed behaviour. Anything of this kind
 belongs in `chrome.declarativeNetRequest.updateSessionRules` at runtime, where a
 rejected rule is a caught promise instead of an extension that will not load.
+
+**An engine with no credential needs MORE pacing, not less.** `notrack.js` is
+the only one here with nothing to resolve — no sign-in, no bearer, no device
+id, no proof of work, no captcha token. The page posts plain JSON to
+`/api/dispatch` and reads an event stream back, so the whole session apparatus
+the other four need is absent rather than omitted: `session()` answers a
+constant, `probe()` is the only thing that touches the network, and nothing is
+ever marked `stale` because nothing can go stale. That reads as the easy case
+and is not. With no account behind a request the limit is applied per address,
+which cannot be throttled politely — it can only be refused. Measured while
+writing it: one question answered in 999ms, and the immediate follow-up came
+back **429**. `pace.js` is what stands between that and a provider that stops
+answering, and it is doing more work here than anywhere else in this folder.
+The engine's job is only to hand it the right shape — `status` and
+`retryAfter` on the thrown error, which is what `index.js` reads at the 429/403
+branch.
+
+That hole was real and general, not a notrack quirk: `gate` was reachable
+only from `askDirect`, so the extension’s whole self-restraint covered one of
+two roads to one host. An agent run whose engine cannot carry a screenshot —
+Claude, Meta AI, notrack — takes the window for every one of its forty turns,
+and the window path sent them as fast as a page could be driven. `askProvider`
+now gates each attempt with the same `intent`, which also spaces the recovery
+retries. `gate` only ever delays and cannot refuse, which is what makes it safe
+on the road that exists to answer when the other one will not. Measured on
+notrack: two requests at no gap → 429; six at the run gap (~3s) → all 200.
+
+Note also what the reply shapes mean, because they disagree with the other
+engines. `delta.chunk` APPENDS and `message.content` REPLACES that turn, and
+both carry a `turn` number — so the reader keys on turn, concatenates deltas
+within one, and lets a `message` overwrite them. Taking the longest, which is
+right for Gemini's repeated frames, yields "PONGPONG" here. Turn 0 is the echo
+of our own question and must be dropped: handing the user their own prompt back
+reads exactly like a working reply.
+
+**arena.ai is window-only, and that is not a gap waiting to be filled.** Its
+chat POST carries a `recaptchaV3Token`, escalating to `recaptchaV2Token` — read
+off `stream/create-evaluation` in its own bundle, and seen firing as an "I'm not
+a robot" box inside the relay window on a real signed-in session. A token that
+can only be minted by Google scoring a live page cannot be produced by a worker,
+so an engine for it would fail every call and fall back anyway — slower than
+having none. It is also why `providerMode: 'embedded'` is the wrong answer for
+it specifically: a framed load scores worse, not better.
 
 **Content scripts cannot use ES modules.** `src/content/*.js` and
 `src/adapters/adapter.js` are classic scripts. They cannot `import`. To split

@@ -264,6 +264,11 @@ function renderTransports(settings) {
       select.append(option);
     }
     select.value = transportFor(settings, id);
+    // What is STORED, so 'Check now' can tell an unsaved dropdown from a saved
+    // one. Both the select and the background read stored settings, so a
+    // changed-but-unsaved value reports a verdict about the OTHER setting —
+    // which reads as the check being broken.
+    select.dataset.saved = select.value;
 
     // Filled in by Check now. Present from the start so pressing it does not
     // reflow the rows underneath the pointer.
@@ -277,6 +282,13 @@ function renderTransports(settings) {
 }
 
 $('checkDirect').addEventListener('click', () => {
+  const unsaved = [...document.querySelectorAll('select[data-transport]')]
+    .filter((el) => el.value !== el.dataset.saved);
+  if (unsaved.length) {
+    say('Press Save first — Check now reports on the saved setting, not the dropdown.', 'err');
+    return;
+  }
+
   for (const el of document.querySelectorAll('[data-verdict]')) {
     el.textContent = 'checking…';
     el.className = 'direct-verdict';
@@ -321,6 +333,14 @@ $('save').addEventListener('click', async () => {
   }
 
   await chrome.storage.local.set({ settings, providerOverrides: overrides });
+
+  // These rows are not re-rendered on save, so the baseline 'Check now' compares
+  // against has to be moved forward here — otherwise the guard keeps reporting
+  // an unsaved change that has just been saved.
+  for (const el of document.querySelectorAll('select[data-transport]')) {
+    el.dataset.saved = el.value;
+  }
+
   say('Saved. Reopen the side panel to pick up the changes.', 'ok');
 });
 

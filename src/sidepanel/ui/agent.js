@@ -318,6 +318,7 @@ const VIA = {
 
 const phaseText = (phase, via) => (phase === 'ready' && VIA[via]) || PHASE[phase];
 
+
 function stepList(steps, turnId, running, phase, via, endedAt) {
   const list = make('ol', 'agent-steps');
   const seen = seenSteps(turnId);

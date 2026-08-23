@@ -58,6 +58,14 @@ upload    {"action":"upload","id":9}
           Ask them to ATTACH it. Never ask for a path, and never accept one —
           a path is a string, and this needs the file itself.
 scroll    {"action":"scroll","direction":"down|up|top|bottom"}
+read_url  {"action":"read_url","url":"https://…"}
+          Reads a page's TEXT without opening it — one request, no page load,
+          no observation, no screenshot, and the tab you are on does not move.
+          This is how you follow a search result, read the article and carry
+          on. Prefer it over navigate whenever you only need to READ something
+          and do not need to click anything on it.
+          Read as an anonymous visitor, so a page behind a login has to be
+          navigated to instead — it will say so if that is the problem.
 navigate  {"action":"navigate","url":"https://…"}      same tab
 open_tab  {"action":"open_tab","url":"https://…"}      new tab, switches to it
 switch_tab{"action":"switch_tab","tabId":123}
@@ -92,6 +100,17 @@ finish    {"action":"finish","answer":"your full answer to the user"}
           carried out on the page yet, do not finish; return the actions that
           carry it out. Only finish early if the task truly needed nothing
           changed, and then say so in as many words.
+
+          PUT THE FINDINGS IN THE ANSWER. The user cannot see the pages you
+          opened, the text you read or the screenshots you took — the answer
+          is the only thing that reaches them. If the task was to find, read,
+          compare or summarise something, the answer carries the substance:
+          the headlines, the numbers, the names, the quotes. "The article is
+          now open", "I have the results" and "the page explains X" describe
+          where the answer is instead of being it, and leave the user to go
+          and do the reading themselves — which was the task.
+          Say where each part came from when it matters, and say plainly what
+          you could not find rather than filling the gap from memory.
 `.trim();
 
 export function systemPrompt(task) {
@@ -862,9 +881,33 @@ export function renderObservation(step, observation, { image = false } = {}) {
   lines.push('', 'INTERACTIVE ELEMENTS:');
   lines.push(observation.elements.length ? observation.elements.join('\n') : '(none found)');
 
+  /**
+   * The range, stated, because the model guesses past it and pays a round trip.
+   *
+   * `indexElements` RENUMBERS from zero on every observation and caps at
+   * MAX_ELEMENTS, so an id is only meaningful against the list it came with.
+   * Nothing said so, and the failure mode is expensive and repeatable: measured
+   * on a Wikipedia run, `{"action":"click","id":137}` and `{"action":"type",
+   * "id":128}` on a page whose cap is 120 — two ids that have never existed,
+   * each costing a failed step, a re-observation and a screenshot.
+   *
+   * Saying "these are the only ones" is what closes it. A model that knows the
+   * range picks from the list; one that does not treats the numbers as page
+   * coordinates that persist, which is exactly what they are not.
+   */
+  if (observation.elements.length) {
+    lines.push(
+      `(Numbered [0]–[${observation.elements.length - 1}]. Those are the ONLY ids that exist ` +
+        'here. They are renumbered on every observation, so an id from an earlier step means ' +
+        'nothing now — always pick from the list above.)'
+    );
+  }
+
   if (observation.omitted) {
     lines.push(
-      `(${observation.omitted} more off-screen controls were not listed. Scroll to reach them.)`
+      `(${observation.omitted} further off-screen controls exist. They have NO number and ` +
+        'cannot be clicked or typed into. Scroll to bring them on screen and the next ' +
+        'observation will number them.)'
     );
   }
 

@@ -19,7 +19,8 @@
         "openai.com",
         "gemini.google.com",
         "claude.ai",
-        "meta.ai"
+        "meta.ai",
+        "arena.ai"
       ],
       "resourceTypes": ["sub_frame"]
     }

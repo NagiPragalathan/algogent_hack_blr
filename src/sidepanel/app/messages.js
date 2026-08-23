@@ -13,6 +13,7 @@ import { setHint, flashHint } from '../ui/hint.js';
 import { renderProviderSheet, renderProviderPill, setProviderBusy } from '../ui/providers.js';
 import { renderThread, patchAnswer } from '../ui/thread.js';
 import { patchAgent } from '../ui/agent.js';
+import { thinkingExcerpt } from '../lib/thinking.js';
 import { paintContext } from '../ui/context.js';
 import { renderTabPicker } from '../ui/tab-picker.js';
 import { renderAttachmentChips } from '../ui/attachments.js';
@@ -127,12 +128,16 @@ export function handlePortMessage(msg) {
       return onAgentAttachment(msg);
 
     case 'AGENT_THINKING':
-      // The provider is mid-reply. Nothing to render yet — the step lands when
-      // the action is parsed — but it keeps the run from looking stalled.
+      // The provider is mid-reply. The step itself lands when the action is
+      // parsed, but the reasoning is arriving now and is worth showing: this
+      // is the ten-to-forty seconds in which nothing else on screen moves, and
+      // a run that has misunderstood the task says so here, a full round trip
+      // before the action that proves it.
+      //
       // Only for the run you are watching: a hint about a run in another
       // conversation would overwrite the one belonging to the chat on screen.
       if (isVisible(msg.runId) && requestTurn(msg.runId)?.agent) {
-        setHint('Agent is deciding the next step…');
+        setHint(thinkingExcerpt(msg.text) || 'Agent is deciding the next step…');
       }
       return;
 
