@@ -54,7 +54,21 @@ const ACTIONS = [
   ['act-use-frame',  'Use frame',       'Enter or leave an iframe'],
   ['act-wait',       'Wait',            'Wait for the page to settle'],
   ['act-ask',        'Ask the user',    'Put a question to the user and wait'],
-  ['act-finish',     'Finish',          'Write the final answer']
+  ['act-finish',     'Finish',          'Write the final answer'],
+
+  /**
+   * Not an agent action — one ANSWER, from one provider, to one question.
+   *
+   * Without it the only conversations that ever produce a receipt are the ones
+   * that happened to run an agent or arm a paid skill, and billing that fires
+   * on some answers and not others reads as billing that is broken. An answer
+   * is work: the question went to a provider through the user's own session,
+   * streamed back and was rendered.
+   *
+   * Priced with the actions rather than above them, because a chat turn is one
+   * unit of the same kind of work a run spends thirty of.
+   */
+  ['act-answer',     'Answer',          'One answer from one provider']
 ];
 
 const [developer] = await sql`

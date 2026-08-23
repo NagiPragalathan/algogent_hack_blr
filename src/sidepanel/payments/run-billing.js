@@ -113,14 +113,36 @@ export function dropRun(runId) {
   pending.delete(runId);
 }
 
+/** The one decline that is not worth telling anybody about. See below. */
+const NOTHING_TO_BILL = 'nothing billable here';
+
 /**
- * Settle everything one run did.
+ * Settle everything one request did — a run's actions, or a chat turn's
+ * answers. Both are the same thing here: a bag of items that pays once.
  *
  * Returns `{paid:true, …}` or `{paid:false, reason}`. Never throws: this is
  * called from a message handler on the way out of a finished run, and an
- * exception here would take the run's own completion handling with it.
+ * exception here would take the request's own completion handling with it.
+ *
+ * The wrapper exists to FILE the failure. Every reason in `attemptSettle` is
+ * something the user might want to fix, and until now every one of them was
+ * dropped on the floor by a `void` at the call site — so a run that should
+ * have been billed and was not looked exactly like a run that was free.
+ * Everything is recorded except the one case that is genuinely nothing to
+ * report: no priced items, with a price list that loaded fine.
  */
 export async function settleRun(runId, sessionId) {
+  const result = await attemptSettle(runId, sessionId);
+
+  if (!result.paid && result.reason !== NOTHING_TO_BILL) {
+    recordDecline(sessionId, result.reason);
+    emit(EVENTS.RENDER_THREAD);
+  }
+
+  return result;
+}
+
+async function attemptSettle(runId, sessionId) {
   const items = pending.get(runId);
   pending.delete(runId);
 
@@ -134,7 +156,7 @@ export async function settleRun(runId, sessionId) {
    */
   if (!items?.length) {
     const missing = listingMissing();
-    return declined(missing || 'nothing billable here');
+    return declined(missing || NOTHING_TO_BILL);
   }
 
   if (!walletState.connected || !walletState.address) return declined('no wallet connected');

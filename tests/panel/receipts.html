@@ -217,6 +217,71 @@
       await renderReceipts(thread, 's-empty');
       ok('an unpaid conversation renders no block', !thread.querySelector('.receipts'));
 
+      /* ---------------------------------------------------------------
+       * A charge that was attempted and could not be made.
+       *
+       * Different from "nothing was charged", which stays silent above.
+       * This one is a fact the user can act on — and before it existed a run
+       * whose price list had failed to load finished with no receipt, no
+       * error and nothing on screen to distinguish it from billing never
+       * having been built.
+       * ------------------------------------------------------------- */
+      const { recordDecline, recordReceipt } = await import('/src/sidepanel/payments/ledger.js');
+
+      // A reason can carry a wallet error string, which comes off an injected
+      // object on a page we do not control.
+      const NASTY_REASON = '<img src=y onerror="window.__pwned2=1">wallet is on MainNet';
+
+      recordDecline('s-declined', NASTY_REASON);
+      await renderReceipts(thread, 's-declined');
+
+      const declinedBlock = thread.querySelector('.receipts');
+      ok('a declined charge renders a block of its own', Boolean(declinedBlock));
+      ok('with no payment rows in it', declinedBlock?.querySelectorAll('.receipt').length === 0);
+      ok(
+        'and no split footer, which would be arithmetic about nothing',
+        !declinedBlock?.querySelector('.receipts-foot')
+      );
+      ok(
+        'the header does not claim any actions',
+        declinedBlock?.querySelector('.receipts-title')?.textContent === 'Fees',
+        declinedBlock?.querySelector('.receipts-title')?.textContent
+      );
+      ok(
+        'the reason is shown',
+        declinedBlock?.querySelector('.receipts-declined-why')?.textContent === NASTY_REASON
+      );
+      ok('a hostile reason did NOT execute', !globalThis.__pwned2);
+      ok('and injected no element', !declinedBlock?.querySelector('img'));
+
+      // A payment that lands must clear the reason it did not: a receipt and
+      // "not charged" side by side is the block contradicting itself.
+      await recordReceipt('s-declined', {
+        receiptId: 99, agentId: 'act-answer', toolLabel: 'Answer from chatgpt',
+        network: 'testnet',
+        total: { microAlgo: 1_000, algo: '0.001000' },
+        developer: { address: 'ZBWK3Y3NNNQNXQTIXHN5NSW23N74N2CKIBIDR2CPDUENFQQFSRZJOGCZQQ',
+                     microAlgo: 800, algo: '0.000800', txid: 'AN1',
+                     explorer: 'https://lora.algokit.io/testnet/transaction/AN1' },
+        company: { address: '2RYXGHHZSCM4LDY7GAPVAOGGFRPJBY3TVHECI3O5ULT3VLSJYQJRSR4BVU',
+                   microAlgo: 200, algo: '0.000200', bps: 2000, txid: 'AN2',
+                   explorer: 'https://lora.algokit.io/testnet/transaction/AN2' },
+        networkFee: { microAlgo: 1_000, algo: '0.001000' }
+      });
+      await renderReceipts(thread, 's-declined');
+
+      const settledBlock = thread.querySelector('.receipts');
+      ok('a landed payment renders its row', settledBlock?.querySelectorAll('.receipt').length === 1);
+      ok(
+        'and clears the earlier decline',
+        !settledBlock?.querySelector('.receipts-declined'),
+        'a receipt and "not charged" together is the block contradicting itself'
+      );
+      ok(
+        'an answer is billed like anything else',
+        settledBlock?.querySelector('.receipt-tool')?.textContent === 'Answer from chatgpt'
+      );
+
       report.innerHTML = lines.join('') + `<hr>${pass}/${pass + fail} passed`;
       globalThis.__result = { pass, fail };
     </script>

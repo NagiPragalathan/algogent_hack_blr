@@ -19,7 +19,7 @@
  * appear.
  */
 
-import { receiptsFor, totalsOf, toAlgo } from '../payments/ledger.js';
+import { receiptsFor, totalsOf, toAlgo, declineFor } from '../payments/ledger.js';
 import { ellipseAddress } from './wallet.js';
 
 const el = (tag, className, text) => {
@@ -128,7 +128,21 @@ function receiptRow(receipt) {
  */
 export async function buildReceiptBlock(sessionId) {
   const receipts = await receiptsFor(sessionId);
-  if (!receipts.length) return null;
+  const decline = declineFor(sessionId);
+
+  /**
+   * Nothing charged and nothing to say: draw nothing. Still the rule.
+   *
+   * What is NOT that case is a charge that was attempted and could not be
+   * made — a wallet that is not connected, one on the wrong chain, a
+   * declined signature, a marketplace that is down. Those are facts about
+   * this conversation and every one of them is something the user can fix,
+   * where "fees: none" is a fact about nothing. Measured before this: a run
+   * whose price list had failed to load finished with no receipt, no error
+   * and no explanation, which from the screen is indistinguishable from
+   * billing never having been built.
+   */
+  if (!receipts.length && !decline) return null;
 
   const totals = totalsOf(receipts);
 
@@ -137,7 +151,13 @@ export async function buildReceiptBlock(sessionId) {
 
   const header = el('div', 'receipts-head');
   header.append(
-    el('span', 'receipts-title', `Fees · ${totals.actions} ${totals.actions === 1 ? 'action' : 'actions'}`)
+    el(
+      'span',
+      'receipts-title',
+      receipts.length
+        ? `Fees · ${totals.actions} ${totals.actions === 1 ? 'action' : 'actions'}`
+        : 'Fees'
+    )
   );
   header.append(el('span', 'receipts-total', `${toAlgo(totals.spentMicroAlgo)} ALGO`));
   block.append(header);
@@ -146,17 +166,35 @@ export async function buildReceiptBlock(sessionId) {
   for (const receipt of receipts) list.append(receiptRow(receipt));
   block.append(list);
 
-  const footer = el('div', 'receipts-foot');
-  footer.append(
-    el(
-      'span',
-      'receipts-split',
-      `${toAlgo(totals.developerMicroAlgo)} to developers · ` +
-        `${toAlgo(totals.companyMicroAlgo)} to the marketplace · ` +
-        `${toAlgo(totals.networkFeeMicroAlgo)} network`
-    )
-  );
-  block.append(footer);
+  /**
+   * The last thing that should have been charged and was not.
+   *
+   * Text through `textContent` like every other value here: the reason can
+   * carry a wallet error message, which is a string from an injected object
+   * on a page we do not control.
+   */
+  if (decline) {
+    const note = el('div', 'receipts-declined');
+    note.append(el('span', 'receipts-declined-mark', 'Not charged'));
+    note.append(el('span', 'receipts-declined-why', decline.reason));
+    block.append(note);
+  }
+
+  // A split of three zeroes under a block that paid nothing is arithmetic
+  // about nothing, and it reads as a payment of 0 rather than as no payment.
+  if (receipts.length) {
+    const footer = el('div', 'receipts-foot');
+    footer.append(
+      el(
+        'span',
+        'receipts-split',
+        `${toAlgo(totals.developerMicroAlgo)} to developers · ` +
+          `${toAlgo(totals.companyMicroAlgo)} to the marketplace · ` +
+          `${toAlgo(totals.networkFeeMicroAlgo)} network`
+      )
+    );
+    block.append(footer);
+  }
 
   return block;
 }

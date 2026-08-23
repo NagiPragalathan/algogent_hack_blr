@@ -31,13 +31,13 @@
 .receipts-title {
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: var(--text);
+  color: var(--fg);
 }
 
 .receipts-total {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  color: var(--text);
+  color: var(--fg);
 }
 
 .receipt-list {
@@ -64,7 +64,7 @@
 
 .receipt-tool {
   font-weight: 600;
-  color: var(--text);
+  color: var(--fg);
   /* A developer chooses this label, so it can be long. It must not push the
      amount off the right edge of a 400px panel. */
   overflow: hidden;
@@ -74,7 +74,7 @@
 
 .receipt-total {
   font-variant-numeric: tabular-nums;
-  color: var(--text);
+  color: var(--fg);
   white-space: nowrap;
 }
 
@@ -92,7 +92,7 @@
   align-items: baseline;
   gap: 8px;
   padding: 2px 0;
-  color: var(--text-dim);
+  color: var(--fg-dim);
 }
 
 .receipt-leg-label {
@@ -102,31 +102,31 @@
 .receipt-address {
   font-family: var(--mono, ui-monospace, monospace);
   font-size: 11px;
-  color: var(--text-dim);
+  color: var(--fg-dim);
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .receipt-leg-amount {
   font-variant-numeric: tabular-nums;
-  color: var(--text);
+  color: var(--fg);
   white-space: nowrap;
 }
 
 .receipt-txid {
-  color: var(--text-dim);
+  color: var(--fg-dim);
   text-decoration: none;
   border-bottom: 1px solid var(--line);
 }
 
 .receipt-txid:hover {
-  color: var(--text);
+  color: var(--fg);
 }
 
 .receipt-fee {
   margin-top: 4px;
   font-size: 11px;
-  color: var(--text-dim);
+  color: var(--fg-dim);
 }
 
 .receipts-foot {
@@ -134,7 +134,7 @@
   margin-top: 4px;
   border-top: 1px solid var(--line);
   font-size: 11px;
-  color: var(--text-dim);
+  color: var(--fg-dim);
 }
 
 /* Who paid. Only a run receipt carries it — a run settles minutes after the
@@ -146,5 +146,35 @@
   gap: 8px;
   margin-top: 4px;
   font-size: 11px;
-  color: var(--text-dim);
+  color: var(--fg-dim);
+}
+
+/* A charge that was attempted and could not be made.
+
+   Deliberately quiet — dimmed text, no red. It is not an error in the answer,
+   which arrived perfectly well; it is a receipt that is missing and a reason
+   the user can act on. Drawn in the warning colour rather than the error one
+   for the same reason: "your wallet is on MainNet" is a nudge, not a failure. */
+.receipts-declined {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.receipts-declined-mark {
+  flex: none;
+  font-weight: 600;
+  color: var(--warn, var(--fg-dim));
+}
+
+/* The reason can be a wallet's own error string, so it has to wrap rather than
+   push the block wider than the 400px column. */
+.receipts-declined-why {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

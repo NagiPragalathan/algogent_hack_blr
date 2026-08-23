@@ -8,7 +8,8 @@ import {
   liveIn,
   requestTurn,
   markStopping,
-  isStopping
+  isStopping,
+  sessionOf
 } from '../core/runs.js';
 import { setHint } from './hint.js';
 import { targetProviders, setProviderBusy } from './providers.js';
@@ -17,6 +18,7 @@ import { clearAttachments } from './attachments.js';
 import { closeSkillFiles } from './skill-files.js';
 import { expandTokens, paintInk } from './composer-ink.js';
 import { chargeForSkill } from '../payments/x402.js';
+import { settleRun } from '../payments/run-billing.js';
 
 /**
  * The composer: sizing the input, and turning what is in it into a question.
@@ -300,6 +302,24 @@ export function finishIfIdle(turnId) {
     ['connecting', 'ready', 'submitted', 'streaming'].includes(a.state)
   );
   if (pending) return;
+
+  /**
+   * Every provider has answered, so now the question pays for itself.
+   *
+   * Here rather than in `onStream` because this is the only place that knows
+   * a REQUEST is finished rather than one of its answers: compare mode fans
+   * one question out to four providers, each of which settles separately,
+   * and four wallet prompts for one question is not a thing anybody approves.
+   * `noteAnswer` has filed a line per provider by now; this signs them once.
+   *
+   * Read the owning session BEFORE `forgetRequest`, which is what knows it —
+   * and never `state.session`, because the panel follows tabs and an answer
+   * routinely lands for a conversation that is no longer on screen.
+   *
+   * Not awaited, for the reason written across this whole layer: a payment
+   * may never hold up an answer, and the answer is already rendered.
+   */
+  void settleRun(turnId, sessionOf(turnId) ?? state.session?.id ?? null);
 
   forgetRequest(turnId);
   turn.providerIds.forEach((id) => setProviderBusy(id, false));

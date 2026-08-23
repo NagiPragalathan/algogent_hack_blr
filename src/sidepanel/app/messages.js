@@ -18,7 +18,7 @@ import { paintContext } from '../ui/context.js';
 import { renderTabPicker } from '../ui/tab-picker.js';
 import { renderAttachmentChips } from '../ui/attachments.js';
 import { setBusy, finishIfIdle, setAskProgress, syncComposer } from '../ui/composer.js';
-import { noteAction, settleRun } from '../payments/run-billing.js';
+import { noteAction, noteAnswer, settleRun } from '../payments/run-billing.js';
 
 /**
  * A message landed on a turn. Repaint it, or file it away.
@@ -378,6 +378,17 @@ function onStream(msg) {
     // conversation the answer belonged to — a dot left spinning for a chat you
     // cannot see reads as the panel being stuck.
     setProviderBusy(msg.providerId, false);
+
+    /**
+     * An answer that arrived is an answer that is charged for.
+     *
+     * Only on `done`: an error, a login wall and a cancelled question all
+     * settle here too, and billing for a question that produced nothing is
+     * the one thing a receipt must never do. Filed now and signed once by
+     * `finishIfIdle` below, when every provider in this turn has finished.
+     */
+    if (msg.state === 'done') noteAnswer(msg.reqId, msg.providerId);
+
     finishIfIdle(msg.reqId);
     if (msg.state === 'done') nameTheChat(msg.reqId, msg.providerId);
   }

@@ -1632,6 +1632,77 @@ later turns real. A row in `receipts` means the money moved and
 also why every leg in the panel links to a public explorer. A receipt you can
 only verify by trusting its issuer is not a receipt.
 
+**Every response pays, and "which skills are payable" was the question that
+stopped that being true.** `loadListing` was called with the panel's own skill
+ids — `?ids=p-summary,p-table,…` — which is a fair optimisation for a panel that
+only ever charged for skills, and became a silent kill switch the moment
+anything else was billable. The registry also carries one entry per agent ACTION
+(`act-navigate`, `act-click`, …), so `priceOf('act-navigate')` was null for every
+step of every run, `noteAction` dropped all of them, and `settleRun` reported
+"nothing billable" — no error anywhere, because a missing registry entry
+legitimately means free. Measured: a two-step Gmail run finished with a green
+"Agent finished · 2 steps" and no receipt at all. The listing is now the whole
+catalogue and takes no argument, because a filtered one is indistinguishable
+from a catalogue whose missing entries are free.
+
+The other half is `act-answer`. Charging only for runs and paid skills means the
+ordinary case — a question, an answer — produces no receipt, and billing that
+fires on some answers and not others reads as billing that is broken. An answer
+is work: the question went to a provider through the user's own session,
+streamed back and was rendered. It is noted per PROVIDER (`noteAnswer` in
+`run-billing.js`), because compare mode fans one question out to four and gets
+four answers back, and one charge for four is exactly the lump sum the per-leg
+receipt exists to replace.
+
+Where it settles is load-bearing. `noteAnswer` files a line on every `done` in
+`onStream`, and `finishIfIdle` signs them — that is the only place that knows a
+REQUEST is finished rather than one of its answers, and settling per answer
+would put four wallet prompts in front of one question. It reads the owning
+session BEFORE `forgetRequest`, which is what knows it, and never
+`state.session`: the panel follows tabs and an answer routinely lands for a
+conversation that is no longer on screen. It is still not awaited. An error, a
+login wall and a cancelled question all settle through the same branch and none
+of them is billed — charging for a question that produced nothing is the one
+thing a receipt must never do.
+
+`settleRun` also checks the wallet's chain against the listing's, which
+`payForSkill` has done since it was written and this path never did: a TestNet
+quote signed by a MainNet wallet fails at submission with an error that says
+nothing about why.
+
+**"Nothing was charged" and "something should have been charged and could not
+be" are different facts, and the block used to draw neither.** The rule it is
+built on is right — a chat where nothing was charged shows NOTHING, because an
+empty "fees: none" under every answer trains people to stop reading the place
+the real numbers appear — and it does not cover a charge that was ATTEMPTED and
+failed. Every reason in `attemptSettle` is something the user can act on: no
+wallet connected, a wallet on the wrong chain, a declined signature, a
+marketplace that is down. All of them were dropped on the floor by the `void` at
+the call site, so a run that should have been billed and was not looked exactly
+like a run that was free — which is how the bug above survived.
+
+`recordDecline` in `ledger.js` files the last one per conversation, in memory
+rather than storage: it describes an attempt, not a payment, and writing
+failures to disk beside the receipts would make the ledger look like a record of
+money that moved. A landed receipt CLEARS it, or the block contradicts itself.
+The one reason never recorded is `NOTHING_TO_BILL` — no priced items with a
+price list that loaded fine, which is a free tool working correctly. That
+distinction is why `listingMissing()` exists in `x402.js`: "this id is not
+priced" and "there are no prices" produce identical silence one layer up and
+need opposite responses.
+
+The decline row is drawn through `textContent` like every other value in that
+block, and `tests/panel/receipts.html` drives a hostile reason string through it
+for the same reason it drives a hostile tool label — a wallet's error message is
+a string from an injected object on a page we do not control.
+
+**`receipts.css` referenced `--text` and `--text-dim`, which do not exist.** The
+tokens are `--fg` and `--fg-dim`. Fourteen declarations, every dimmed line in the
+fee block, all inheriting body colour instead — the one surface whose whole job
+is being read carefully was drawing its supporting detail at full weight. Worth
+knowing because CSS fails silently here: an unknown custom property is not an
+error, it is an unset value, so nothing anywhere reports it.
+
 **The fee block is built with the DOM, never `innerHTML`.** A tool label comes
 from a developer's registration and an address comes off the wire; both are
 content we do not control, and this is the one surface in the panel where
