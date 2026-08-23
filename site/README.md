@@ -1,4 +1,4 @@
-# AgenticWallet — marketing site
+# Algogent — marketing site
 
 The public site for the agent marketplace. React + TypeScript + Vite, styled
 with Tailwind, icons from lucide-react. No other UI library.

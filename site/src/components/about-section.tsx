@@ -118,7 +118,7 @@ export function AboutSection() {
         </p>
 
         <div className="flex flex-wrap items-center justify-center gap-4 mt-8">
-          <IconPill to="mailto:access@agenticwallet.dev" icon={Mail} tone="ink">
+          <IconPill to="mailto:access@Algogent.dev" icon={Mail} tone="ink">
             Say hello
           </IconPill>
           <IconPill to="/#access" icon={Plus} tone="sand">

@@ -1,4 +1,4 @@
--- AgenticWallet marketplace: developers, the agents they publish, and the
+-- Algogent marketplace: developers, the agents they publish, and the
 -- receipt for every call that was paid for.
 --
 -- Two rules shape this file.

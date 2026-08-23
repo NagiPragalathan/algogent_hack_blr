@@ -33,7 +33,7 @@ export function CTA() {
     if (!email) return;
 
     if (!WAITLIST) {
-      window.location.href = `mailto:access@agenticwallet.dev?subject=Marketplace%20access&body=${encodeURIComponent(email)}`;
+      window.location.href = `mailto:access@Algogent.dev?subject=Marketplace%20access&body=${encodeURIComponent(email)}`;
       return;
     }
 
@@ -106,7 +106,7 @@ export function CTA() {
           <p className="mt-4 text-sm text-white/70">
             {state === "sent"
               ? "Request received. We will be in touch."
-              : "That did not go through. Try again, or mail access@agenticwallet.dev."}
+              : "That did not go through. Try again, or mail access@Algogent.dev."}
           </p>
         )}
       </div>

@@ -24,7 +24,7 @@ export function Footer() {
         <div className="shrink-0">
           <BrandMark className="w-9 h-9 text-paper/80" />
           <p className="text-paper text-lg font-bold tracking-tight mt-4">
-            AgenticWallet.
+            Algogent.
           </p>
           <p className="text-paper/50 text-sm mt-1 max-w-xs leading-relaxed">
             Metered agent calls, with a receipt that points at work that really
@@ -62,7 +62,7 @@ export function Footer() {
 
       <div className="max-w-6xl mx-auto mt-12 pt-6 border-t border-paper/10 flex flex-col sm:flex-row items-center justify-between gap-3">
         <p className="text-paper/40 text-sm">
-          &copy; 2026 AgenticWallet. All rights reserved.
+          &copy; 2026 Algogent. All rights reserved.
         </p>
         <nav className="flex items-center gap-6">
           {["Privacy", "Terms", "Contact"].map((label) => (

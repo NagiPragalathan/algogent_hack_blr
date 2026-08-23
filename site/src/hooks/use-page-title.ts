@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 
 /** The suffix every page carries, so the brand is never typed twice. */
-const SUFFIX = "AgenticWallet";
+const SUFFIX = "Algogent";
 
 /**
  * The document title for a route.

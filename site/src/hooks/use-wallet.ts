@@ -102,9 +102,9 @@ async function fetchBalances(
     const algoBalance =
       data.amount != null
         ? (data.amount / 1_000_000).toLocaleString("en-US", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 4,
-          })
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 4,
+        })
         : "0.00";
     let usdcBalance = "0.00";
     if (Array.isArray(data.assets) && cfg.usdcAssetId) {
@@ -114,9 +114,9 @@ async function fetchBalances(
       );
       usdcBalance = usdc
         ? (usdc.amount / 1_000_000).toLocaleString("en-US", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })
         : "0.00 (opt-in needed)";
     }
     return { algoBalance, usdcBalance };
@@ -132,7 +132,7 @@ function luteConnect(genesisID: string): Promise<string> {
     const top = 100 + (window.screenY ?? 0);
     const win = window.open(
       "https://lute.app/connect",
-      "AgenticWallet",
+      "Algogent",
       `width=500,height=750,left=${left},top=${top}`
     );
     if (!win) {

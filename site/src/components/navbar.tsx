@@ -54,7 +54,7 @@ export function Navbar() {
       <nav className="flex items-center gap-10">
         <a href="#top" className="flex items-center gap-2.5 shrink-0">
           <LogoMark />
-          <span className="font-bold tracking-tight">AgenticWallet</span>
+          <span className="font-bold tracking-tight">Algogent</span>
         </a>
 
         <div className="hidden md:flex items-center gap-3 text-sm">

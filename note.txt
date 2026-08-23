@@ -142,7 +142,7 @@ crete new folder clled /site in it c rete the this them site for mrket plce to l
 
 
 
-MASTER BUILD PROMPT — Algo's AgenticWallet: Marketplace Agent Suite
+MASTER BUILD PROMPT — Algogent: Marketplace Agent Suite
 
 ROLE
 You are a senior full-stack + browser-extension engineer. You are building
@@ -234,7 +234,7 @@ MARKETPLACE INTEGRATION LAYER
   health-check at request time — if an agent is down, it must not appear
   as available (no stale/fake availability)
 - Every invocation goes through the x402 payment flow before the agent
-  runs: 402 challenge → AgenticWallet signs/settles → agent executes →
+  runs: 402 challenge → Algogent signs/settles → agent executes →
   result + real cost (based on actual tokens consumed) returned together
 
 DELIVERABLE FOR EACH AGENT
