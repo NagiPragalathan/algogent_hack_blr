@@ -14,6 +14,13 @@
 import { els } from '../core/dom.js';
 import { icon } from '../lib/icons.js';
 import { flashHint, setHint } from './hint.js';
+import {
+  autoPayEnabled,
+  autoPayConfigured,
+  autoPayAddress,
+  autoPayProblem,
+  setAutoPayEnabled
+} from '../payments/auto-pay.js';
 
 export const NETWORKS = {
   testnet: {
@@ -800,6 +807,83 @@ export function renderWalletUI() {
 /**
  * Render the wallet sheet contents (Connected view or Wallet list)
  */
+/**
+ * The switch: pay for every agent step, or pay for nothing.
+ *
+ * It is drawn in BOTH branches of the sheet, connected and not, because with
+ * the marketplace paying for itself a wallet is no longer needed to be charged
+ * — so the one place someone would look for "am I being billed for this run"
+ * must answer whether or not they ever connected anything.
+ *
+ * The note under it is the whole point of the block. Four states, and the two
+ * that look identical from outside — off, and on with nothing behind it — need
+ * opposite responses: one is a setting the user chose, the other is a deploy
+ * with no account to pay from. Reporting them the same way is how the last
+ * billing bug stayed invisible for a week.
+ */
+function autoPayBlock() {
+  const on = autoPayEnabled();
+
+  // The note is left EMPTY here and filled in by `bindAutoPay` as text — it
+  // carries the marketplace's own words about why it cannot pay, which is
+  // content off the wire and does not belong in an HTML string.
+  return `
+    <div class="wallet-autopay${on ? ' on' : ''}">
+      <label class="wallet-autopay-row" for="wallet-autopay-toggle">
+        <input type="checkbox" id="wallet-autopay-toggle" ${on ? 'checked' : ''}>
+        <span class="wallet-autopay-title">Pay per agent step</span>
+        <span class="wallet-autopay-state">${on ? 'On' : 'Off'}</span>
+      </label>
+      <p class="wallet-autopay-note" data-note></p>
+    </div>
+  `;
+}
+
+/**
+ * Bind it, and write the note as TEXT.
+ *
+ * The note carries a reason string that came off the wire — the marketplace's
+ * own words about why it cannot pay — so it is set with `textContent` rather
+ * than built into the markup above. Same rule as the fee block: this is the
+ * surface where content we do not control sits next to a wallet address.
+ */
+function bindAutoPay(root) {
+  const el = root.querySelector('[data-note]');
+  if (el) el.textContent = autoPayNote();
+
+  const toggle = root.querySelector('#wallet-autopay-toggle');
+  toggle?.addEventListener('change', async (e) => {
+    e.stopPropagation();
+    const on = await setAutoPayEnabled(e.target.checked);
+    flashHint(
+      on ? 'Agent steps will be paid for as they happen.' : 'Agent steps will not be charged.',
+      2500
+    );
+    // Repaint, because the note under the switch says something different now.
+    renderWalletSheet();
+  });
+}
+
+/** The note text for the current state, kept next to the block that draws it. */
+function autoPayNote() {
+  const on = autoPayEnabled();
+  const address = autoPayAddress();
+
+  if (!on) return 'Nothing the agent does is charged for. No transaction is made.';
+
+  if (autoPayConfigured() && isValidAlgorandAddress(address || '')) {
+    return (
+      `Each action settles by itself from ${ellipseAddress(address, 6, 4)} — ` +
+      'one transaction per step, no signature asked.'
+    );
+  }
+
+  return (
+    `Not settling automatically — ${autoPayProblem() || 'the marketplace has no account to pay from'}. ` +
+    'Steps bank for one signature from your own wallet at the end of a run.'
+  );
+}
+
 export function renderWalletSheet() {
   if (!els.walletContent) return;
 
@@ -853,6 +937,8 @@ export function renderWalletSheet() {
           <span>x402 HTTP Payment Protocol Ready (${currentNetwork.name})</span>
         </div>
 
+        ${autoPayBlock()}
+
         <div class="wallet-actions">
           ${
             currentNetwork.faucetUrl
@@ -873,6 +959,8 @@ export function renderWalletSheet() {
         </div>
       </div>
     `;
+
+    bindAutoPay(els.walletContent);
 
     // Bind network switcher
     const netSelect = els.walletContent.querySelector('#wallet-network-select');
@@ -910,8 +998,22 @@ export function renderWalletSheet() {
 
       testPayBtn.disabled = true;
       const label = testPayBtn.textContent;
-      testPayBtn.textContent = 'Waiting for your wallet…';
-      flashHint('Approve the payment in your wallet…', 4000);
+
+      /**
+       * Two roads, two waits, and the label has to name the right one. Saying
+       * "approve this in your wallet" over a payment that signs itself sends
+       * the user looking for a popup that is never coming — the same class of
+       * lie as the stage track announcing a provider window on a path that
+       * opens none.
+       */
+      const unattended = autoPayConfigured();
+      testPayBtn.textContent = unattended ? 'Paying…' : 'Waiting for your wallet…';
+      flashHint(
+        unattended
+          ? 'Paying from the marketplace wallet — no signature needed…'
+          : 'Approve the payment in your wallet…',
+        4000
+      );
 
       try {
         const { testPayment } = await import('../payments/run-billing.js');
@@ -960,6 +1062,8 @@ export function renderWalletSheet() {
         </select>
       </div>
 
+      ${autoPayBlock()}
+
       <div class="sheet-list">
         ${SUPPORTED_WALLETS.map(
           (w) => `
@@ -997,5 +1101,7 @@ export function renderWalletSheet() {
         if (id) connectWallet(id);
       });
     });
+
+    bindAutoPay(els.walletContent);
   }
 }

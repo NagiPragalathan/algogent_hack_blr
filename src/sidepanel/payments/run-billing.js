@@ -1,5 +1,15 @@
 /**
- * Billing an agent run: one signature at the end, one transaction per action.
+ * Billing an agent run: one transaction per action, signed as it happens or
+ * once at the end depending on who is holding the key.
+ *
+ * THERE ARE TWO ROADS AND ONE SWITCH, and `charge()` below is where they part.
+ * When the marketplace signs for itself (`auto-pay.js`) an action is paid the
+ * moment it happens — there is no popup to batch away from, so batching would
+ * only delay the receipt and lose the ones a Stop throws away. When it does
+ * not, the actions accumulate and take ONE wallet signature at the end, which
+ * is the original design and everything below still describes it. The switch —
+ * `autoPayEnabled` — is checked before anything is even recorded: off means no
+ * transaction, not a transaction deferred to a different door.
  *
  * Every step the run takes — navigate, read_url, click, type, screenshot — is a
  * registered agent with an owner and a price, so a run's receipt has a line per
@@ -27,7 +37,10 @@
 
 import { walletState, getWalletSigner, NETWORKS } from '../ui/wallet.js';
 import { emit, EVENTS } from '../core/bus.js';
-import { apiBase, toBase64, declined, listedNetwork } from './x402.js';
+import { state } from '../core/state.js';
+import { sessionOf } from '../core/runs.js';
+import { apiBase, toBase64, declined, listedNetwork, NOTHING_TO_BILL } from './x402.js';
+import { payAuto, autoPayReady, autoPayEnabled, autoPayConfigured } from './auto-pay.js';
 import { recordRunReceipt, recordDecline } from './ledger.js';
 
 /**
@@ -48,6 +61,62 @@ const agentIdFor = (verb) => `act-${String(verb).replace(/_/g, '-')}`;
 const pending = new Map();
 
 /**
+ * Which conversation a request belongs to, resolved the way every other call
+ * site resolves it — and the `.id` is the whole of why this is a helper.
+ *
+ * `sessionOf` returns the session OBJECT, and passing that where an id belongs
+ * serialised an entire conversation into an on-chain note once already: the
+ * user's question, the provider's answer and the conversation URL, public and
+ * permanent. Charging per step multiplies the number of places that mistake
+ * could be made by thirty, so it is made in one place instead.
+ *
+ * `state.session` is the fallback rather than the answer, because the panel
+ * follows tabs and a run routinely finishes for a conversation that is no
+ * longer on screen.
+ */
+const sessionFor = (id) => sessionOf(id)?.id ?? state.session?.id ?? null;
+
+/**
+ * File the outcome of a charge, whichever road it took.
+ *
+ * "Nothing was charged" and "something should have been charged and could not
+ * be" are different facts and only the second is actionable — a wallet on the
+ * wrong chain, an unfunded marketplace account, a marketplace that is down.
+ * Dropping those on the floor is what made the last billing bug invisible.
+ */
+function report(result, sessionId) {
+  if (!result.paid && result.reason !== NOTHING_TO_BILL) {
+    recordDecline(sessionId, result.reason);
+    emit(EVENTS.RENDER_THREAD);
+  }
+  return result;
+}
+
+/**
+ * Charge for one item the instant it happened, or bank it for the wallet.
+ *
+ * This is the fork the whole per-step feature turns on, and it is deliberately
+ * the only place that decides. A run's action is charged NOW when the
+ * marketplace signs for itself — there is no popup to batch away from, so
+ * batching would only delay the receipt and lose the ones a Stop discards. When
+ * it does not sign for itself the item is banked exactly as before, because
+ * thirty wallet prompts is not a thing anybody approves.
+ *
+ * Never awaited. The run is mid-flight and a payment may not hold it up.
+ */
+function charge(id, item) {
+  if (!autoPayReady()) {
+    const list = pending.get(id) || [];
+    list.push(item);
+    pending.set(id, list);
+    return;
+  }
+
+  const sessionId = sessionFor(id);
+  void payAuto([item], sessionId).then((result) => report(result, sessionId));
+}
+
+/**
  * Record one executed action against its run.
  *
  * Called for every AGENT_STEP. Steps that are not actions — a screenshot note,
@@ -57,6 +126,17 @@ const pending = new Map();
  */
 export function noteAction(runId, step) {
   if (!runId || !step?.kind || UNBILLED.has(step.kind)) return;
+
+  /**
+   * The switch, and it is checked before anything is recorded rather than
+   * before anything is charged.
+   *
+   * Off has to mean no transaction, not a transaction deferred: recording the
+   * action and skipping the charge would leave the bag to be settled at the end
+   * of the run, which is a payment the user switched off arriving a minute
+   * later through a different door. Nothing is filed, so nothing is owed.
+   */
+  if (!autoPayEnabled()) return;
 
   /**
    * NOT gated on `priceOf`, and that was the bug that switched billing off.
@@ -76,17 +156,13 @@ export function noteAction(runId, step) {
    * thing that actually knows. The cost of a verb nobody sells is one round
    * trip per RUN, which the server answers with a clean "nothing priced".
    */
-  const agentId = agentIdFor(step.kind);
-
-  const list = pending.get(runId) || [];
-  list.push({
-    agentId,
+  charge(runId, {
+    agentId: agentIdFor(step.kind),
     // The label the user actually read in the timeline, so the receipt line and
     // the step it paid for say the same thing.
     label: String(step.description || step.kind).slice(0, 120),
     step: Number.isInteger(step.step) ? step.step : null
   });
-  pending.set(runId, list);
 }
 
 /**
@@ -114,15 +190,15 @@ export const ANSWER_AGENT_ID = 'act-answer';
  */
 export function noteAnswer(reqId, providerId) {
   if (!reqId) return;
+  // The same switch, for the same reason — see `noteAction`.
+  if (!autoPayEnabled()) return;
 
   // Unpriced until the server says otherwise — see `noteAction` above.
-  const list = pending.get(reqId) || [];
-  list.push({
+  charge(reqId, {
     agentId: ANSWER_AGENT_ID,
     label: providerId ? `Answer from ${providerId}` : 'Answer',
     step: null
   });
-  pending.set(reqId, list);
 }
 
 /** Forget a run without charging for it — Stop, or a run that never billed. */
@@ -148,15 +224,28 @@ export function dropRun(runId) {
  * the point, and the button says so.
  */
 export function testPayment(sessionId) {
+  const item = {
+    agentId: ANSWER_AGENT_ID,
+    label: 'Test payment from the wallet panel',
+    step: null
+  };
+
+  /**
+   * Whichever road a run would take — and `force`, because the per-step switch
+   * is a default about UNATTENDED charging and this is somebody pressing a
+   * button to find out whether paying works at all. Refusing it because the
+   * switch is off would answer a question nobody asked.
+   */
+  if (autoPayConfigured()) {
+    return payAuto([item], sessionId, { force: true }).then((result) =>
+      report(result, sessionId)
+    );
+  }
+
   const runId = `test-${Date.now().toString(36)}`;
-  pending.set(runId, [
-    { agentId: ANSWER_AGENT_ID, label: 'Test payment from the wallet panel', step: null }
-  ]);
+  pending.set(runId, [item]);
   return settleRun(runId, sessionId);
 }
-
-/** The one decline that is not worth telling anybody about. See below. */
-const NOTHING_TO_BILL = 'nothing billable here';
 
 /**
  * Settle everything one request did — a run's actions, or a chat turn's
@@ -174,14 +263,7 @@ const NOTHING_TO_BILL = 'nothing billable here';
  * report: no priced items, with a price list that loaded fine.
  */
 export async function settleRun(runId, sessionId) {
-  const result = await attemptSettle(runId, sessionId);
-
-  if (!result.paid && result.reason !== NOTHING_TO_BILL) {
-    recordDecline(sessionId, result.reason);
-    emit(EVENTS.RENDER_THREAD);
-  }
-
-  return result;
+  return report(await attemptSettle(runId, sessionId), sessionId);
 }
 
 async function attemptSettle(runId, sessionId) {
@@ -189,10 +271,22 @@ async function attemptSettle(runId, sessionId) {
   pending.delete(runId);
 
   /**
-   * Genuinely nothing to bill: no action ran, or every one of them was
-   * `ask`/`finish`. Not a fault, and the only decline never reported.
+   * Genuinely nothing to bill: no action ran, every one of them was
+   * `ask`/`finish`, or each was already paid for as it happened. Not a fault,
+   * and the only decline never reported.
    */
   if (!items?.length) return declined(NOTHING_TO_BILL);
+
+  /**
+   * Anything banked before the probe answered still goes the automatic way.
+   *
+   * The probe is a network round trip started at boot, so the first few actions
+   * of a run that begins immediately are filed for the wallet road by a panel
+   * that did not yet know there was another one. Settling them here rather than
+   * prompting is what makes the switch mean one thing: on, the marketplace
+   * pays; off, nothing does.
+   */
+  if (autoPayReady()) return payAuto(items, sessionId);
 
   if (!walletState.connected || !walletState.address) return declined('no wallet connected');
 

@@ -1,0 +1,273 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>pay per agent step — does the switch mean what it says?</title>
+    <style>
+      body { font: 13px/1.5 ui-monospace, monospace; background: #14161a; color: #e6e8eb; padding: 20px; }
+      .p { color: #7ee787; }
+      .f { color: #ff7b72; }
+      .n { color: #9aa1ac; }
+      hr { border: 0; border-top: 1px solid #333; margin: 12px 0; }
+      #thread { display: none; }
+    </style>
+  </head>
+  <body>
+    <!--
+      The unattended road, and the switch in front of it.
+
+      `run-billing.html` next door covers the wallet road: a finished run
+      reaches the signer, once, with a leg per action. This covers the other
+      one, where the marketplace holds the key and there is no signer to reach —
+      and the failures are different in kind. Nothing prompts, so nothing on
+      screen tells you whether a payment was attempted; the only evidence is a
+      request that either went out or did not.
+
+      Three things are asserted and each one is a bug that has a name:
+
+        1. ON, every action posts its own settlement AS IT HAPPENS. A run of
+           four actions is four requests, not one at the end — batching them
+           would delay the receipt and lose the ones a Stop throws away.
+        2. OFF, absolutely nothing is posted. Not deferred, not banked for a
+           wallet prompt at the end of the run: off means no transaction, and a
+           payment the user switched off arriving a minute later through a
+           different door is the failure this asserts against.
+        3. The probe deciding late does not lose the actions filed before it
+           answered — they settle the automatic way at the end, rather than
+           falling through to a wallet prompt the switch was meant to prevent.
+
+      Hermetic: `fetch` is faked, so this asserts what the panel SENDS. Whether
+      the chain accepts it is `site/tests/autopay-live.test.mjs`, which signs
+      and submits for real.
+
+      Serve the repo over http and open this page.
+    -->
+    <div id="thread"></div>
+    <div id="report">running…</div>
+    <script type="module">
+      const report = document.getElementById('report');
+      const lines = [];
+      let pass = 0;
+      let fail = 0;
+      const ok = (name, cond, extra = '') => {
+        if (cond) { pass++; lines.push(`<div class="p">ok   ${name}</div>`); }
+        else { fail++; lines.push(`<div class="f">FAIL ${name}${extra ? ' — ' + extra : ''}</div>`); }
+        report.innerHTML = lines.join('') + `<hr>${pass}/${pass + fail} passed`;
+      };
+      const note = (text) => { lines.push(`<div class="n">     ${text}</div>`); };
+
+      const store = {};
+      globalThis.chrome = {
+        storage: {
+          local: {
+            get: async (k) => (typeof k === 'string' ? { [k]: store[k] } : { ...store }),
+            set: async (o) => Object.assign(store, o)
+          }
+        }
+      };
+
+      /** Every settlement the panel posts, so the assertions can count them. */
+      const posted = [];
+      let clientAnswer = {
+        autoSign: true,
+        address: 'B55UYGCBZP6JI4ABHMQECGBMXESYIUZJBG4ZKLD4BISCUDDROQUKO35KXU',
+        network: 'testnet',
+        funded: true,
+        reason: ''
+      };
+
+      const json = (body, status = 200) =>
+        new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+      globalThis.fetch = async (url, init) => {
+        const href = String(url);
+
+        if (href.includes('/api/x402/client')) return json(clientAnswer);
+
+        if (href.includes('/api/x402/run')) {
+          const body = JSON.parse(init.body);
+          posted.push(body);
+
+          // The shape `recordRunReceipt` normalises: one line per action.
+          return json({
+            settled: true,
+            from: clientAnswer.address,
+            network: 'testnet',
+            receiptIds: [posted.length],
+            groups: [{ groupId: 'g', confirmedRound: 1000 + posted.length, transactions: 2 }],
+            totals: {
+              actions: body.items.length,
+              totalMicroAlgo: 1000 * body.items.length,
+              totalAlgo: '0.001',
+              developerMicroAlgo: 800,
+              developerAlgo: '0.000800',
+              companyMicroAlgo: 200,
+              companyAlgo: '0.000200',
+              networkFeeMicroAlgo: 2000,
+              networkFeeAlgo: '0.002000'
+            },
+            lines: body.items.map((i, n) => ({
+              agentId: i.agentId,
+              label: i.label,
+              step: i.step,
+              to: 'DEV',
+              microAlgo: 800,
+              algo: '0.000800',
+              txid: `TX${posted.length}-${n}`,
+              explorer: `https://lora.algokit.io/testnet/transaction/TX${posted.length}-${n}`
+            }))
+          });
+        }
+
+        // The listing, which nothing here depends on but boot code may reach.
+        return json({ network: 'testnet', companyBps: 2000, agents: [] });
+      };
+
+      const settled = () => new Promise((r) => setTimeout(r, 60));
+
+      const { initAutoPay, autoPayEnabled, autoPayReady, setAutoPayEnabled } =
+        await import('/src/sidepanel/payments/auto-pay.js');
+      const { noteAction, noteAnswer, settleRun } =
+        await import('/src/sidepanel/payments/run-billing.js');
+      const { receiptsFor, declineFor } = await import('/src/sidepanel/payments/ledger.js');
+
+      /* ── before the probe answers ─────────────────────────────────────── */
+
+      note('actions filed before the probe has answered');
+      noteAction('run-early', { kind: 'navigate', description: 'Opened example.com', step: 1 });
+      noteAction('run-early', { kind: 'click', description: 'Clicked "Sign in"', step: 2 });
+      await settled();
+
+      ok('nothing is posted while the road is unknown', posted.length === 0,
+         `${posted.length} posted`);
+
+      await initAutoPay();
+      ok('the probe finds a paying account', autoPayReady() === true);
+
+      const before = posted.length;
+      await settleRun('run-early', 's-early');
+      await settled();
+
+      ok('and what was banked settles automatically, not through a wallet',
+         posted.length === before + 1, `${posted.length - before} requests`);
+      ok('carrying both actions', posted.at(-1)?.items?.length === 2,
+         JSON.stringify(posted.at(-1)?.items?.length));
+      ok('with autoSign set, and no buyer of its own',
+         posted.at(-1)?.autoSign === true && !posted.at(-1)?.buyer);
+      ok('and every item carries an ordinal',
+         posted.at(-1).items.every((i) => Number.isInteger(i.seq)),
+         JSON.stringify(posted.at(-1).items.map((i) => i.seq)));
+
+      /* ── switched on: one payment per step ────────────────────────────── */
+
+      note('a four-action run, switch ON');
+      posted.length = 0;
+
+      ok('the switch defaults to on', autoPayEnabled() === true);
+
+      noteAction('run-live', { kind: 'navigate', description: 'Opened the job board', step: 1 });
+      noteAction('run-live', { kind: 'type', description: 'Typed into "Full name"', step: 2 });
+      noteAction('run-live', { kind: 'click', description: 'Clicked "Apply"', step: 3 });
+      noteAction('run-live', { kind: 'screenshot', description: 'Took a screenshot', step: 4 });
+      await settled();
+
+      ok('every action pays as it happens', posted.length === 4, `${posted.length} requests`);
+      ok('one action per request', posted.every((p) => p.items.length === 1));
+      ok('ordinals are distinct', new Set(posted.map((p) => p.items[0].seq)).size === 4,
+         JSON.stringify(posted.map((p) => p.items[0].seq)));
+      ok('the labels are the ones from the timeline',
+         posted[1]?.items[0].label === 'Typed into "Full name"',
+         posted[1]?.items[0].label);
+
+      note('and the unbillable verbs still cost nothing');
+      posted.length = 0;
+      noteAction('run-live', { kind: 'ask', description: 'May I submit?', step: 5 });
+      noteAction('run-live', { kind: 'finish', description: 'Done', step: 6 });
+      await settled();
+      ok('ask and finish are never charged', posted.length === 0, `${posted.length} requests`);
+
+      note('a receipt lands per action, labelled as the step');
+      const receipts = await receiptsFor('s-live-unused');
+      const live = await receiptsFor('s-early');
+      ok('the settled run filed a receipt', live.length >= 1, `${live.length}`);
+
+      /* ── switched off: nothing at all ─────────────────────────────────── */
+
+      note('the same run, switch OFF');
+      await setAutoPayEnabled(false);
+      ok('the switch reads off', autoPayEnabled() === false);
+      ok('and nothing is ready to charge', autoPayReady() === false);
+
+      posted.length = 0;
+      noteAction('run-off', { kind: 'navigate', description: 'Opened example.com', step: 1 });
+      noteAction('run-off', { kind: 'click', description: 'Clicked "Sign in"', step: 2 });
+      noteAnswer('req-off', 'chatgpt');
+      await settled();
+      ok('no action posts anything', posted.length === 0, `${posted.length} requests`);
+
+      const offResult = await settleRun('run-off', 's-off');
+      await settled();
+      ok('and the end of the run posts nothing either', posted.length === 0,
+         `${posted.length} requests`);
+      ok('because nothing was ever banked', offResult.paid === false);
+      ok('reported as free, not as a fault', !declineFor('s-off'),
+         JSON.stringify(declineFor('s-off')));
+
+      note('and it survives a reload');
+      await setAutoPayEnabled(true);
+      ok('back on', autoPayEnabled() === true);
+      ok('and remembered in storage', store.x402AutoPayPerStep === true,
+         JSON.stringify(store.x402AutoPayPerStep));
+
+      /* ── an answer is work too ────────────────────────────────────────── */
+
+      note('a chat answer, per provider');
+      posted.length = 0;
+      noteAnswer('req-1', 'chatgpt');
+      noteAnswer('req-1', 'gemini');
+      await settled();
+      ok('four providers would be four charges, not one', posted.length === 2,
+         `${posted.length} requests`);
+      ok('named per provider', posted[0]?.items[0].label === 'Answer from chatgpt',
+         posted[0]?.items[0].label);
+
+      /* ── the marketplace cannot pay ───────────────────────────────────── */
+
+      note('a 503 from the marketplace stops it asking again');
+      posted.length = 0;
+
+      /**
+       * The run has to BELONG to a conversation before a decline can be filed
+       * against one — `sessionFor` reads `sessionOf(runId)` and falls back to
+       * the visible session, and with neither there is nowhere to put the
+       * reason. That is correct behaviour and it is also why this is set here:
+       * asserting the reason lands without giving it a session tests nothing.
+       */
+      const { state } = await import('/src/sidepanel/core/state.js');
+      state.session = { id: 's-503' };
+      globalThis.fetch = async (url, init) => {
+        const href = String(url);
+        if (href.includes('/api/x402/run')) {
+          posted.push(JSON.parse(init.body));
+          return json({ error: 'autosign_unavailable', message: 'no client account is configured.' }, 503);
+        }
+        return json({});
+      };
+
+      noteAction('run-503', { kind: 'navigate', description: 'Opened example.com', step: 1 });
+      await settled();
+      noteAction('run-503', { kind: 'click', description: 'Clicked something', step: 2 });
+      await settled();
+
+      ok('the first action tries', posted.length >= 1, `${posted.length} requests`);
+      ok('the second does not repeat a settled fact', posted.length === 1,
+         `${posted.length} requests`);
+      ok('and the reason is filed where the user can read it',
+         /client account/.test(declineFor('s-503')?.reason || declineFor(null)?.reason || String(declineFor('s-503'))),
+         JSON.stringify(declineFor('s-503')));
+
+      report.innerHTML = lines.join('') + `<hr>${pass}/${pass + fail} passed`;
+      document.title = fail ? `FAIL ${fail}` : `ok ${pass}`;
+    </script>
+  </body>
+</html>

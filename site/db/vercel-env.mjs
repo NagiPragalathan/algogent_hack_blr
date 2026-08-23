@@ -50,7 +50,16 @@ const OPTIONAL = [
   'X402_NETWORK',
   'ACTION_PRICE_MICRO_ALGO',
   'ALGOD_URL',
-  'ALGOD_TOKEN'
+  'ALGOD_TOKEN',
+  /**
+   * The other secret, and the reason this list is not just DATABASE_URL any
+   * more. Without it on the deployment the endpoint reports "no client account
+   * is configured" and the extension quietly falls back to prompting a wallet
+   * — which works, and looks exactly like the switch doing nothing.
+   */
+  'CLIENT_MNEMONIC',
+  'X402_AUTOSIGN',
+  'X402_AUTOSIGN_MAINNET'
 ];
 
 const missing = REQUIRED.filter((k) => !values[k]);

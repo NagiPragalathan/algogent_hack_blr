@@ -119,6 +119,17 @@ export async function buildRunGroups({ network, buyer, groups, companyAddress, s
           agent: leg.agentId,
           label: leg.label,
           step: leg.step ?? null,
+          /**
+           * Included only when the caller sent one, so a run that signs once
+           * still produces byte-identical notes to the ones it always did.
+           *
+           * Its job is uniqueness. A per-action settlement builds each payment
+           * on its own, and two with the same sender, receiver, amount, note
+           * and validity window ARE the same transaction — the chain refuses
+           * the second as already in the ledger. It reads as an ordinal on an
+           * explorer, which is the useful thing to put there anyway.
+           */
+          ...(Number.isInteger(leg.seq) ? { seq: leg.seq } : {}),
           session
         }),
         suggestedParams: params

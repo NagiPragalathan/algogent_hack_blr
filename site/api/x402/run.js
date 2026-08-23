@@ -3,6 +3,20 @@
  *
  * POST /api/x402/run          { buyer, sessionId, items:[{agentId,label,step}] }  → 402 + groups
  * POST /api/x402/run?settle=1 { buyer, sessionId, groups:[{signed:[…]}] }         → receipt
+ * POST /api/x402/run          { autoSign:true, sessionId, items:[…] }             → receipt
+ *
+ * THE THIRD SHAPE IS THE UNATTENDED ONE, and it collapses the other two into a
+ * single call. There is no 402 and no signature comes back over the wire,
+ * because the account that pays is the marketplace's own and its key is here —
+ * see `_lib/client-wallet.js` for what that costs and why it is bounded to a
+ * throwaway TestNet account by default.
+ *
+ * It is not a second road. It joins the settle path at exactly the point a
+ * wallet's signatures would have arrived, and everything past that — the
+ * re-derived plan, `assertMatches` on every leg, submit, confirm, and only then
+ * the receipt — is the same code. A branch that skipped the verification
+ * because the server produced the bytes would be a branch nothing tests, and
+ * the first thing to go wrong in it is a payout to the wrong address.
  *
  * Both halves live in one file because they are one contract: `settle` re-plans
  * the run from the SAME database rows the quote read, and the two must not be
@@ -25,6 +39,7 @@ import {
   explorerFor,
   unfundedReceivers
 } from '../_lib/algorand.js';
+import { clientAccount, autoSignProblem, signGroups } from '../_lib/client-wallet.js';
 
 /** A run longer than this is refused rather than silently truncated. */
 const MAX_ITEMS = 120;
@@ -61,6 +76,18 @@ async function priceItems(items) {
       agentId: row.id,
       label: String(item.label || row.name).slice(0, 120),
       step: Number.isInteger(item.step) ? item.step : null,
+      /**
+       * The caller's ordinal for this payment, and it is what stops two
+       * identical actions colliding on chain.
+       *
+       * It never mattered while a run signed once: every leg was in one group,
+       * so every leg had a different group id. Settling per action means each
+       * one is built on its own, and two payments with the same sender,
+       * receiver, amount, note and validity window are the SAME transaction —
+       * same id — so the second is refused as already in the ledger. Two
+       * `act-answer` lines in one session are exactly that shape.
+       */
+      seq: Number.isInteger(item.seq) ? item.seq : null,
       priceMicroAlgo: Number(row.price_micro_algo),
       payoutAddress: row.payout_address
     });
@@ -74,10 +101,34 @@ export default handler('POST', async (req, res) => {
   const settling = url.searchParams.get('settle') === '1';
   const input = body(req);
   const sessionId = safeSessionId(input.sessionId);
+  const network = activeNetwork();
 
-  const buyer = String(input.buyer || '').trim();
-  if (!ALGORAND_ADDRESS.test(buyer)) {
-    return fail(res, 400, 'invalid_buyer', 'buyer must be a valid Algorand address.');
+  /**
+   * Unattended, or a wallet.
+   *
+   * When it is unattended the `buyer` field is IGNORED rather than trusted.
+   * Honouring it would have the server build a group from someone else's
+   * address and then try to sign it with a key that does not own it — which
+   * fails deep inside submission with a message about a signature, several
+   * layers away from the caller who named the wrong account.
+   */
+  const auto = input.autoSign === true || url.searchParams.get('auto') === '1';
+  let buyer;
+
+  if (auto) {
+    const problem = autoSignProblem(network);
+    if (problem) {
+      // 503 rather than 400: nothing about the request is wrong, the deploy is
+      // simply not set up to pay for itself. The panel reports it as a decline
+      // and the answer it belongs to is already on screen.
+      return fail(res, 503, 'autosign_unavailable', problem);
+    }
+    buyer = clientAccount().address;
+  } else {
+    buyer = String(input.buyer || '').trim();
+    if (!ALGORAND_ADDRESS.test(buyer)) {
+      return fail(res, 400, 'invalid_buyer', 'buyer must be a valid Algorand address.');
+    }
   }
 
   const items = Array.isArray(input.items) ? input.items : [];
@@ -92,7 +143,6 @@ export default handler('POST', async (req, res) => {
   }
 
   const company = feeConfig();
-  const network = activeNetwork();
   const plan = planGroups(priced, company.bps);
 
   const groups = await buildRunGroups({
@@ -109,15 +159,17 @@ export default handler('POST', async (req, res) => {
   // One network fee per transaction, and the buyer pays every one of them.
   const networkFee = groups.reduce((n, g) => n + g.transactions.length * 1000, 0);
 
-  if (!settling) {
-    /**
-     * Checked before anyone is asked to sign, not after.
-     *
-     * The chain's own refusal for this arrives once the user has already
-     * approved the payment in their wallet, says "below min balance", names no
-     * address, and is indistinguishable from the buyer being broke. Reporting
-     * it here names the account and the amount it needs.
-     */
+  /**
+   * Checked before anything is signed, not after — and now on both roads.
+   *
+   * The chain's own refusal for this arrives once the payment has already been
+   * approved, says "below min balance", names no address, and is
+   * indistinguishable from the buyer being broke. Reporting it here names the
+   * account and the amount it needs. Unattended it matters MORE, not less: with
+   * nobody reading a wallet prompt the only visible symptom is a run that
+   * quietly produces no receipts.
+   */
+  async function unfundedProblem() {
     const incoming = {};
     for (const g of groups) {
       for (const tx of g.transactions) {
@@ -125,22 +177,21 @@ export default handler('POST', async (req, res) => {
       }
     }
     const unfunded = await unfundedReceivers(network, Object.keys(incoming), incoming);
+    if (!unfunded.length) return '';
 
-    if (unfunded.length) {
-      return fail(
-        res,
-        409,
-        'receiver_unfunded',
-        unfunded
-          .map(
-            (u) =>
-              `${u.address} has never been funded, and Algorand will not let it ` +
-              `receive ${toAlgoString(u.arriving)} ALGO — an account must hold at ` +
-              `least ${toAlgoString(u.needs)} ALGO. Send it 0.1 ALGO once, then this works.`
-          )
-          .join(' ')
-      );
-    }
+    return unfunded
+      .map(
+        (u) =>
+          `${u.address} has never been funded, and Algorand will not let it ` +
+          `receive ${toAlgoString(u.arriving)} ALGO — an account must hold at ` +
+          `least ${toAlgoString(u.needs)} ALGO. Send it 0.1 ALGO once, then this works.`
+      )
+      .join(' ');
+  }
+
+  if (!settling && !auto) {
+    const problem = await unfundedProblem();
+    if (problem) return fail(res, 409, 'receiver_unfunded', problem);
 
     return json(res, 402, {
       x402Version: 1,
@@ -184,14 +235,35 @@ export default handler('POST', async (req, res) => {
 
   /* ── settle ────────────────────────────────────────────────────────────── */
 
-  const returned = Array.isArray(input.groups) ? input.groups : [];
-  if (returned.length !== groups.length) {
-    return fail(
-      res,
-      400,
-      'group_count_mismatch',
-      `This run needs ${groups.length} signed group(s); ${returned.length} were sent.`
-    );
+  /**
+   * The signatures, from whichever side holds the key.
+   *
+   * Unattended they are produced here, a line above the verification that then
+   * checks them — which is the point. There is no path into submission that
+   * skips `assertMatches`, so a signer that signed the wrong bytes is caught by
+   * the same guard that catches a client trying to pay itself.
+   */
+  let returned;
+
+  if (auto) {
+    const problem = await unfundedProblem();
+    if (problem) return fail(res, 409, 'receiver_unfunded', problem);
+
+    try {
+      returned = signGroups(groups);
+    } catch (error) {
+      return fail(res, 503, 'autosign_failed', String(error?.message || error));
+    }
+  } else {
+    returned = Array.isArray(input.groups) ? input.groups : [];
+    if (returned.length !== groups.length) {
+      return fail(
+        res,
+        400,
+        'group_count_mismatch',
+        `This run needs ${groups.length} signed group(s); ${returned.length} were sent.`
+      );
+    }
   }
 
   const settled = [];

@@ -68,3 +68,38 @@ export const algodToken = () => process.env.ALGOD_TOKEN || '';
 
 /** The one value with no default. See the note at the top of this file. */
 export const databaseUrl = () => process.env.DATABASE_URL;
+
+/**
+ * The account the marketplace signs with when nobody is there to approve.
+ *
+ * THE SECOND VALUE WITH NO DEFAULT, and for a harder reason than the first.
+ * Everything above is public information — an address, a percentage, a chain, a
+ * price — and hardcoding it makes a fresh deploy work. A mnemonic is the
+ * opposite of all of it: it is total control of an account, this repository is
+ * public, and a phrase that has been published once cannot be unpublished.
+ * Unset means unattended payment is simply off, which is the safe direction and
+ * the one the whole payments layer already defaults to.
+ *
+ * `TEST_MNEMONIC` is read as a fallback because it is the throwaway account the
+ * end-to-end test already uses and already funds, so a demo machine needs no
+ * second variable. That is a convenience, not a recommendation.
+ */
+export const clientMnemonic = () =>
+  (process.env.CLIENT_MNEMONIC || process.env.TEST_MNEMONIC || '').trim();
+
+/**
+ * The off switch. Default ON, because a mnemonic that has been configured is
+ * somebody having already decided — a key present and ignored reads as a broken
+ * deploy, which is the failure this whole layer keeps writing notes about.
+ */
+export const autoSignEnabled = () => String(process.env.X402_AUTOSIGN ?? '1') !== '0';
+
+/**
+ * MainNet has to be said out loud.
+ *
+ * On TestNet an unattended key spends worthless ALGO and the worst case is a
+ * demo wallet drained. The identical code on MainNet spends real money with no
+ * confirmation anywhere in front of it, and inheriting that by changing one
+ * unrelated variable is exactly how it would happen.
+ */
+export const autoSignMainnetAllowed = () => process.env.X402_AUTOSIGN_MAINNET === '1';

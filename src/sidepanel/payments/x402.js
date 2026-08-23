@@ -31,22 +31,19 @@ import { walletState, getWalletSigner, NETWORKS } from '../ui/wallet.js';
 import { emit, EVENTS } from '../core/bus.js';
 import { recordReceipt } from './ledger.js';
 
-/** Where the marketplace lives. Overridable for a local API during development. */
-const DEFAULT_API = 'https://algogent.vercel.app';
+/**
+ * Re-exported from `api.js`, which owns them so that `auto-pay.js` can reach
+ * them without importing this file — this one imports the wallet, and the ring
+ * that would close does not throw, it just leaves an export undefined at the
+ * wrong moment and the panel fails to boot. Callers need not care which file
+ * they come from.
+ */
+export { apiBase, initPayments, declined, NOTHING_TO_BILL } from './api.js';
 
-let base = DEFAULT_API;
+import { apiBase, declined } from './api.js';
 
-/** Where the marketplace lives, read at call time so a stored override applies. */
-export const apiBase = () => base;
-
-export async function initPayments() {
-  try {
-    const stored = await chrome.storage.local.get('marketplaceApi');
-    if (stored?.marketplaceApi) base = String(stored.marketplaceApi).replace(/\/+$/, '');
-  } catch {
-    // Storage is unavailable in some contexts; the default is fine.
-  }
-}
+/** Local alias: everything below reads better as "this one is free". */
+const free = declined;
 
 /**
  * What is payable, and what it costs.
@@ -83,7 +80,7 @@ export async function loadListing() {
   if (listing) return listing;
 
   try {
-    const res = await fetch(`${base}/api/agents`, {
+    const res = await fetch(`${apiBase()}/api/agents`, {
       headers: { accept: 'application/json' }
     });
     if (!res.ok) {
@@ -115,16 +112,6 @@ export function priceOf(agentId) {
 export const listedNetwork = () => listing?.network || null;
 
 /**
- * The reasons a call is not charged.
- *
- * Returned rather than thrown, and worded for a person, because every one of
- * them is a thing the user might want to fix — and none of them is a failure of
- * the question they just asked.
- */
-export const declined = (reason) => ({ paid: false, reason });
-const free = declined;
-
-/**
  * Pay for one use of one skill.
  *
  * Returns `{paid:true, receipt}` or `{paid:false, reason}`. It never throws and
@@ -154,7 +141,7 @@ export async function payForSkill(skill, { sessionId } = {}) {
 
   let quote;
   try {
-    const res = await fetch(`${base}/api/x402/quote`, {
+    const res = await fetch(`${apiBase()}/api/x402/quote`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ agentId: skill.id, buyer: walletState.address, sessionId })
@@ -191,7 +178,7 @@ export async function payForSkill(skill, { sessionId } = {}) {
   }
 
   try {
-    const res = await fetch(`${base}/api/x402/settle`, {
+    const res = await fetch(`${apiBase()}/api/x402/settle`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({

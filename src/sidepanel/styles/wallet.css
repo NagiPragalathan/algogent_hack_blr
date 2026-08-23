@@ -457,6 +457,75 @@
   flex: 0 0 auto;
 }
 
+/*
+ * Pay-per-step, and the note under it.
+ *
+ * The note is the half that matters and it is drawn at dimmed weight on
+ * purpose: the switch answers "is it on", the sentence answers "and is that
+ * actually charging anything", which are different questions and only one of
+ * them can be read at a glance. `--fg-dim` and not `--text-dim`, which does not
+ * exist — an unknown custom property is not an error in CSS, it is an unset
+ * value, so getting that wrong draws supporting detail at full weight and
+ * nothing anywhere reports it.
+ */
+.wallet-autopay {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+.wallet-autopay.on {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+.wallet-autopay-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.wallet-autopay-row input {
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.wallet-autopay-title {
+  flex: 1 1 auto;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.wallet-autopay-state {
+  flex: 0 0 auto;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
+.wallet-autopay.on .wallet-autopay-state {
+  color: var(--accent);
+}
+
+.wallet-autopay-note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--fg-dim);
+  /* An address and a marketplace error both arrive unbroken and long. */
+  overflow-wrap: anywhere;
+}
+
 .wallet-actions {
   display: flex;
   gap: 8px;

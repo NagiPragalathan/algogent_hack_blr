@@ -86,7 +86,17 @@ export async function recordRunReceipt(sessionId, settled) {
     receiptId,
     kind: 'run',
     agentId: null,
-    toolLabel: `${totals.actions ?? settled.lines?.length ?? 0} agent actions`,
+    /**
+     * "1 agent actions" is what a per-step settlement produced, and it is both
+     * ungrammatical and less informative than the thing it is describing. When
+     * a receipt covers exactly one action, the action's own label IS the label
+     * — which is the whole point of charging per step: the row in the fee block
+     * and the step in the timeline say the same thing.
+     */
+    toolLabel:
+      settled.lines?.length === 1
+        ? settled.lines[0].label
+        : `${totals.actions ?? settled.lines?.length ?? 0} agent actions`,
     network: settled.network,
     from: settled.from,
     paidAt: new Date().toISOString(),
