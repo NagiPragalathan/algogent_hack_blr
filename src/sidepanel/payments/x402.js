@@ -68,11 +68,12 @@ let listing = null;
 /**
  * Why the listing is not here, if it is not.
  *
- * "This id is not priced" and "there are no prices" produce the same silence
- * one layer up, and they need opposite responses: the first is a free tool
- * working correctly, the second is billing switched off for the whole panel
- * with nothing on screen to say so. That was the shape of the bug this file
- * came out of, so the two are told apart at the source.
+ * Kept even though the run path no longer consults it. That path stopped
+ * asking the client whether something is priced at all — the server decides,
+ * because a cached listing that failed to load once is a kill switch nothing
+ * can see (the note in `run-billing.js`). `payForSkill` still gates on the
+ * listing, so the reason is still worth having there, and the Options page
+ * wants it too.
  */
 let listingProblem = '';
 

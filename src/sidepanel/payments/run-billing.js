@@ -27,7 +27,7 @@
 
 import { walletState, getWalletSigner, NETWORKS } from '../ui/wallet.js';
 import { emit, EVENTS } from '../core/bus.js';
-import { apiBase, priceOf, toBase64, declined, listingMissing, listedNetwork } from './x402.js';
+import { apiBase, toBase64, declined, listedNetwork } from './x402.js';
 import { recordRunReceipt, recordDecline } from './ledger.js';
 
 /**
@@ -52,14 +52,31 @@ const pending = new Map();
  *
  * Called for every AGENT_STEP. Steps that are not actions — a screenshot note,
  * a halted batch, a dead-link notice — carry a `kind` that is not a verb, so
- * they find no registered agent and are dropped by `priceOf` rather than needing
+ * they map to an id no agent has and the SERVER drops them, rather than needing
  * a second list here that would drift from the first.
  */
 export function noteAction(runId, step) {
   if (!runId || !step?.kind || UNBILLED.has(step.kind)) return;
 
+  /**
+   * NOT gated on `priceOf`, and that was the bug that switched billing off.
+   *
+   * The obvious version asks the cached listing whether this verb has a
+   * price and drops it if not — which reads as an optimisation and is a
+   * silent kill switch, because the listing is fetched ONCE at boot and
+   * cached for the life of the panel. A panel opened while the marketplace
+   * was down has `listing === null` forever, so every action of every run is
+   * dropped here, `settleRun` finds an empty list, and the whole thing is
+   * indistinguishable from a run that was free. Measured: a three-step Gmail
+   * run, no wallet prompt, no receipt, no error.
+   *
+   * The SERVER is the authority on price and always was — `priceItems` in
+   * api/x402/run.js looks every id up and reports what it skipped. So the
+   * verb is recorded unconditionally and priced once, at settlement, by the
+   * thing that actually knows. The cost of a verb nobody sells is one round
+   * trip per RUN, which the server answers with a clean "nothing priced".
+   */
   const agentId = agentIdFor(step.kind);
-  if (!priceOf(agentId)) return;
 
   const list = pending.get(runId) || [];
   list.push({
@@ -97,8 +114,8 @@ export const ANSWER_AGENT_ID = 'act-answer';
  */
 export function noteAnswer(reqId, providerId) {
   if (!reqId) return;
-  if (!priceOf(ANSWER_AGENT_ID)) return;
 
+  // Unpriced until the server says otherwise — see `noteAction` above.
   const list = pending.get(reqId) || [];
   list.push({
     agentId: ANSWER_AGENT_ID,
@@ -147,17 +164,10 @@ async function attemptSettle(runId, sessionId) {
   pending.delete(runId);
 
   /**
-   * Nothing billable is USUALLY correct and occasionally a fault.
-   *
-   * A run of free actions bills nothing and says nothing, which is right. A
-   * panel whose price list never loaded also bills nothing — and that is
-   * billing switched off for every conversation, reported identically. The
-   * two are told apart here so the second can reach the user.
+   * Genuinely nothing to bill: no action ran, or every one of them was
+   * `ask`/`finish`. Not a fault, and the only decline never reported.
    */
-  if (!items?.length) {
-    const missing = listingMissing();
-    return declined(missing || NOTHING_TO_BILL);
-  }
+  if (!items?.length) return declined(NOTHING_TO_BILL);
 
   if (!walletState.connected || !walletState.address) return declined('no wallet connected');
 
@@ -192,6 +202,15 @@ async function attemptSettle(runId, sessionId) {
     // 402 is the success case — it is the challenge, not a failure.
     if (res.status !== 402) {
       const problem = await res.json().catch(() => null);
+
+      /**
+       * The server priced everything and found nothing chargeable. That is
+       * the free case arriving one layer later than it used to, and it is
+       * reported as free rather than as a fault — the panel's own copy of
+       * the price list is no longer what decides it.
+       */
+      if (problem?.error === 'nothing_billable') return declined(NOTHING_TO_BILL);
+
       return declined(problem?.message || `the marketplace answered ${res.status}`);
     }
     quote = await res.json();

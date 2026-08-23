@@ -73,8 +73,10 @@ export async function buildPaymentGroup({
   const algod = algodFor(network);
   const params = await algod.getTransactionParams().do();
 
+  // Leads with the protocol so an explorer shows what this is. Same shape as
+  // the run path's `noteFor` — see the note there for why the prefix matters.
   const note = new TextEncoder().encode(
-    JSON.stringify({ x402: 1, agent: agentId, session: sessionId || null })
+    `x402/1 ${JSON.stringify({ agent: agentId, session: sessionId || null })}`
   );
 
   const legs = [

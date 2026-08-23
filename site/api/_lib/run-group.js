@@ -39,6 +39,36 @@ export const MAX_ACTIONS_PER_GROUP = MAX_GROUP_SIZE - 1;
  * different prices or different owners, at which point summing per item is
  * still right and splitting the total is quietly wrong.
  */
+/**
+ * The on-chain note, and it STARTS with the protocol.
+ *
+ * It used to be bare JSON — `{"x402":1,"agent":"act-navigate",…}` — which
+ * carries the same information and reads as nothing in particular. An
+ * explorer shows the note as UTF-8 text, so what someone actually sees when
+ * they open a transaction is its first few characters, and `{"x402":1` buried
+ * behind a brace is not a label. Leading with `x402/1` makes every payment
+ * this protocol produces identifiable at a glance, by anyone, without our
+ * database — which is the whole claim the receipt makes.
+ *
+ * A prefix and then JSON, rather than a bespoke encoding, so it stays
+ * machine-readable: split on the first space and parse the rest.
+ *
+ * Algorand caps a note at 1024 bytes. Nothing here approaches that — the
+ * label is bounded by `MAX_LABEL` at the call site — but it is asserted
+ * rather than assumed, because an over-long note is rejected by the network
+ * and would take the whole atomic group down with it.
+ */
+const NOTE_PREFIX = 'x402/1 ';
+const MAX_NOTE_BYTES = 1024;
+
+function noteFor(payload) {
+  const text = NOTE_PREFIX + JSON.stringify(payload);
+  const bytes = new TextEncoder().encode(text);
+  return bytes.length <= MAX_NOTE_BYTES
+    ? bytes
+    : new TextEncoder().encode(NOTE_PREFIX + JSON.stringify({ session: payload.session ?? null }));
+}
+
 export function planGroups(items, companyBps) {
   const chunks = [];
   for (let i = 0; i < items.length; i += MAX_ACTIONS_PER_GROUP) {
@@ -71,7 +101,6 @@ export function planGroups(items, companyBps) {
 export async function buildRunGroups({ network, buyer, groups, companyAddress, sessionId }) {
   const algod = algodFor(network);
   const params = await algod.getTransactionParams().do();
-  const encoder = new TextEncoder();
 
   return groups.map((group) => {
     const txns = [];
@@ -82,9 +111,12 @@ export async function buildRunGroups({ network, buyer, groups, companyAddress, s
         sender: buyer,
         receiver: leg.payoutAddress,
         amount: leg.developerMicroAlgo,
-        note: encoder.encode(
-          JSON.stringify({ x402: 1, agent: leg.agentId, step: leg.step ?? null, session: sessionId || null })
-        ),
+        note: noteFor({
+          agent: leg.agentId,
+          label: leg.label,
+          step: leg.step ?? null,
+          session: sessionId || null
+        }),
         suggestedParams: params
       });
       txns.push(txn);
@@ -104,9 +136,7 @@ export async function buildRunGroups({ network, buyer, groups, companyAddress, s
         sender: buyer,
         receiver: companyAddress,
         amount: group.companyTotal,
-        note: encoder.encode(
-          JSON.stringify({ x402: 1, role: 'marketplace', session: sessionId || null })
-        ),
+        note: noteFor({ role: 'marketplace', session: sessionId || null }),
         suggestedParams: params
       });
       txns.push(txn);

@@ -1,0 +1,219 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>run billing — does the wallet actually get asked?</title>
+    <style>
+      body { font: 13px/1.5 ui-monospace, monospace; background: #14161a; color: #e6e8eb; padding: 20px; }
+      .p { color: #7ee787; }
+      .f { color: #ff7b72; }
+      .n { color: #9aa1ac; }
+      hr { border: 0; border-top: 1px solid #333; margin: 12px 0; }
+      #thread { display: none; }
+    </style>
+  </head>
+  <body>
+    <!--
+      The one layer nothing covered: does a finished run reach the signer?
+
+      Everything either side of it was tested — `parseAction` on one end,
+      `receipts.js` on the other — and the middle was assumed. It was wrong, and
+      the failure had no symptom: `noteAction` gated on a cached price list, a
+      panel that booted while the marketplace was down had `listing === null`
+      for its whole life, every action was dropped before it was recorded, and
+      `settleRun` reported the FREE path. No wallet prompt, no receipt, no
+      error. Reported as "there is no popup to settle".
+
+      So this drives the real modules with a fake wallet and asserts the thing
+      the user actually sees: signTxns is called, with one transaction per
+      action plus the marketplace leg, exactly once.
+
+      NOT hermetic: it quotes against the live marketplace, because the quote is
+      half of what is being tested. A network failure here reads as a failed
+      assertion, which is correct — that IS the user-visible failure.
+
+      Serve the repo over http and open this page.
+    -->
+    <div id="thread"></div>
+    <div id="report">running…</div>
+    <script type="module">
+      const report = document.getElementById('report');
+      const lines = [];
+      let pass = 0;
+      let fail = 0;
+      const ok = (name, cond, extra = '') => {
+        if (cond) { pass++; lines.push(`<div class="p">ok   ${name}</div>`); }
+        else { fail++; lines.push(`<div class="f">FAIL ${name}${extra ? ' — ' + extra : ''}</div>`); }
+        report.innerHTML = lines.join('') + `<hr>${pass}/${pass + fail} passed`;
+      };
+      const note = (text) => { lines.push(`<div class="n">     ${text}</div>`); };
+
+      const store = {};
+      globalThis.chrome = {
+        storage: {
+          local: {
+            get: async (k) => (typeof k === 'string' ? { [k]: store[k] } : { ...store }),
+            set: async (o) => Object.assign(store, o)
+          }
+        }
+      };
+
+      const { walletState } = await import('/src/sidepanel/ui/wallet.js');
+      const { noteAction, noteAnswer, settleRun } = await import('/src/sidepanel/payments/run-billing.js');
+      const { declineFor } = await import('/src/sidepanel/payments/ledger.js');
+
+      /**
+       * A real, funded TestNet address. The quote runs a live min-balance
+       * preflight on every receiver, so a made-up buyer fails for a reason that
+       * has nothing to do with the flow being tested.
+       */
+      const BUYER = 'ZYQRMSLGHOFS6ZKCOXND4VFHCT5ZNMMGMFBMF7QBU4ITADHYAVWDF333YM';
+
+      walletState.connected = true;
+      walletState.address = BUYER;
+      walletState.network = 'testnet';
+
+      /** Stands in for Lute. Recording it IS the assertion. */
+      const prompts = [];
+      globalThis.algorand = {
+        signTxns: async (txns) => {
+          prompts.push(txns);
+          // Enough to satisfy the shape check; settlement will reject it, which
+          // is fine — the popup is what this file is about.
+          return txns.map(() => 'AA==');
+        }
+      };
+
+      /* ----------------------------------------------------------------
+       * A run exactly like the reported one: open a tab, navigate, finish.
+       * ---------------------------------------------------------------- */
+      const RUN = 'run-1';
+      const SESSION = 's-run-billing';
+
+      noteAction(RUN, { kind: 'open_tab', description: 'Opened a starting page', step: 0 });
+      noteAction(RUN, { kind: 'navigate', description: 'Go to https://mail.google.com/', step: 1 });
+      // Not billable: the run stopping to write its answer.
+      noteAction(RUN, { kind: 'finish', description: 'Gmail is open to your Inbox.', step: 2 });
+      // Not an action at all — a notice. The server prices it away.
+      noteAction(RUN, { kind: 'notice', description: 'Left your new tab alone', step: 1 });
+
+      const result = await settleRun(RUN, SESSION);
+
+      ok('the wallet was asked to sign', prompts.length === 1,
+         prompts.length === 0 ? 'signTxns was never called — this is the reported bug' : `called ${prompts.length} times`);
+
+      if (prompts.length) {
+        const txns = prompts[0];
+        note(`${txns.length} transactions in the prompt`);
+        ok('one prompt carries the whole run', Array.isArray(txns));
+        ok(
+          'two action legs plus the marketplace leg',
+          txns.length === 3,
+          `${txns.length} — finish and the notice must not be billed`
+        );
+      }
+
+      ok('settleRun answered', result && typeof result.paid === 'boolean', JSON.stringify(result));
+      note(`result: ${JSON.stringify(result).slice(0, 160)}`);
+
+      /* ----------------------------------------------------------------
+       * A plain chat turn bills too, and compare mode bills per provider.
+       * ---------------------------------------------------------------- */
+      prompts.length = 0;
+      const REQ = 'req-1';
+      noteAnswer(REQ, 'chatgpt');
+      noteAnswer(REQ, 'gemini');
+      await settleRun(REQ, SESSION);
+
+      ok('a chat turn asks the wallet once', prompts.length === 1, `called ${prompts.length} times`);
+      if (prompts.length) {
+        ok(
+          'one leg per provider plus the marketplace leg',
+          prompts[0].length === 3,
+          `${prompts[0].length} — two answers should be two legs`
+        );
+      }
+
+      /* ----------------------------------------------------------------
+       * A run with nothing chargeable stays silent. Still the rule.
+       * ---------------------------------------------------------------- */
+      prompts.length = 0;
+      const QUIET = 'run-quiet';
+      noteAction(QUIET, { kind: 'finish', description: 'Nothing to do.', step: 0 });
+      const quiet = await settleRun(QUIET, 's-quiet');
+
+      ok('a run of unbillable steps never prompts', prompts.length === 0);
+      ok('and records no decline to show', !declineFor('s-quiet'), JSON.stringify(declineFor('s-quiet')));
+      note(`quiet result: ${JSON.stringify(quiet)}`);
+
+      /* ----------------------------------------------------------------
+       * No wallet is a reason the user can act on, so it must be reported.
+       * ---------------------------------------------------------------- */
+      walletState.connected = false;
+      const NOWALLET = 'run-nowallet';
+      noteAction(NOWALLET, { kind: 'click', description: 'Click [3] Sign in', step: 0 });
+      await settleRun(NOWALLET, 's-nowallet');
+
+      ok('a missing wallet is reported, not swallowed', Boolean(declineFor('s-nowallet')),
+         'this is the difference between "free" and "broken"');
+      note(`decline: ${declineFor('s-nowallet')?.reason || '(none)'}`);
+
+      walletState.connected = true;
+
+      /* ----------------------------------------------------------------
+       * A web-connected Lute must reach lute.app/sign.
+       *
+       * This is the failure the fake wallet above was hiding. `connectWallet`
+       * supports Lute two ways — an injected `window.lute` from the extension,
+       * and a popup at lute.app/connect for everyone else — and the signer only
+       * ever knew the first. So a web-connected Lute showed an address, showed
+       * a balance, said it was connected, and threw on every signature. From
+       * the panel: a run that finishes with no wallet prompt at all.
+       * ---------------------------------------------------------------- */
+      const { getWalletSigner } = await import('/src/sidepanel/ui/wallet.js');
+
+      delete globalThis.algorand;   // no injected wallet, like the real web flow
+      walletState.providerId = 'lute';
+      walletState.providerName = 'Lute Wallet';
+
+      const opened = [];
+      const realOpen = window.open;
+      window.open = (url, name, params) => {
+        opened.push({ url, name, params });
+        return { closed: false, postMessage() {} };
+      };
+
+      const signer = getWalletSigner();
+      ok('a web-connected Lute still yields a signer', Boolean(signer));
+
+      // Never awaited: it resolves only when Lute answers, which nothing here
+      // will do. What is being tested is that it opens the window at all.
+      const pending = signer.signTransactions(['AAEC']);
+      pending.catch(() => {});
+      await new Promise((r) => setTimeout(r, 60));
+
+      ok('it opens a Lute window', opened.length === 1,
+         opened.length === 0 ? 'nothing opened — this is the reported bug' : `${opened.length} windows`);
+      ok(
+        'at the SIGN endpoint, not connect',
+        opened[0]?.url === 'https://lute.app/sign',
+        opened[0]?.url || '(none)'
+      );
+      note(`window.open("${opened[0]?.url}", …)`);
+
+      // A wallet with no injected object and no web flow must say so rather
+      // than fail silently.
+      walletState.providerId = 'pera';
+      walletState.providerName = 'Pera Wallet';
+      let refusal = '';
+      await getWalletSigner().signTransactions(['AAEC']).catch((e) => { refusal = e.message; });
+      ok('an unsupported wallet explains itself', /cannot sign from the side panel/.test(refusal), refusal);
+      note(refusal);
+
+      window.open = realOpen;
+
+      report.innerHTML = lines.join('') + `<hr>${pass}/${pass + fail} passed`;
+      globalThis.__result = { pass, fail };
+    </script>
+  </body>
+</html>

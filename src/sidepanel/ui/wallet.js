@@ -305,6 +305,119 @@ function requestLuteConnect(genesisID) {
 }
 
 /**
+ * Ask Lute to sign, over the same postMessage protocol it connects with.
+ *
+ * This is the half that was missing, and its absence had no symptom anywhere.
+ * `connectWallet` supports Lute two ways: an injected `window.lute` from the
+ * browser extension, and — for everyone else — a popup at lute.app/connect that
+ * hands back an address over postMessage. `getWalletSigner` only ever knew the
+ * first: it looked for an injected object with a `signTxns` method and threw if
+ * there was none. So a web-connected Lute showed an address, showed a balance,
+ * reported itself connected, and could not sign a single transaction. From the
+ * panel that is a run finishing with no wallet prompt at all — reported as
+ * exactly that, twice, while every layer either side of it tested green.
+ *
+ * Mirrors lute-connect 2.0.1 (GalaxyPay/lute-connect) rather than inventing a
+ * shape: `/sign` rather than `/connect`, `sign-txns-response` rather than
+ * `connect-response`, and the same ready → sign → signed handshake with the
+ * same origin guard. Getting any of those wrong is a popup that opens and never
+ * answers, which is worse than the failure it replaces.
+ *
+ * ARC-0001 in, ARC-0001 out: an array of `{txn}` where `txn` is base64 msgpack,
+ * answered in the same ORDER — a reordered group has a different group id and
+ * the chain rejects it.
+ */
+function requestLuteSign(txns) {
+  return new Promise((resolve, reject) => {
+    const useExt = window.lute;
+    let win;
+    const left = 100 + (window.screenX || 0);
+    const top = 100 + (window.screenY || 0);
+    const params = `width=500,height=750,left=${left},top=${top}`;
+
+    // What Lute is asked to sign. `signers` is deliberately absent: omitting it
+    // means "sign this with whatever account owns it", which is what we want,
+    // where an empty array means the opposite — do not sign this one.
+    const request = txns.map((txn) => (typeof txn === 'string' ? { txn } : txn));
+
+    if (useExt) {
+      window.dispatchEvent(
+        new CustomEvent('lute-connect', { detail: { action: 'sign', txns: request } })
+      );
+    } else {
+      win = window.open('https://lute.app/sign', 'Sidebar AI', params);
+      if (!win) {
+        reject(new Error('Lute could not open — allow pop-ups for this extension and try again.'));
+        return;
+      }
+    }
+
+    const type = useExt ? 'sign-txns-response' : 'message';
+    let settled = false;
+
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener(type, messageHandler);
+      clearInterval(interval);
+      fn(value);
+    };
+
+    function messageHandler(event) {
+      if (!useExt && event.origin !== 'https://lute.app') return;
+      const detail = event.data || event.detail;
+      if (!detail) return;
+
+      switch (detail.action) {
+        case 'ready':
+          // The popup announces itself; the request follows. Repeated below in
+          // case `ready` fired before this listener existed.
+          win?.postMessage({ action: 'sign', txns: request }, '*');
+          break;
+        case 'signed':
+          finish(resolve, detail.txns);
+          break;
+        case 'error':
+          finish(reject, new Error(detail.message || 'Lute could not sign this'));
+          break;
+        case 'close':
+          finish(reject, new Error('payment declined'));
+          break;
+      }
+    }
+
+    window.addEventListener(type, messageHandler);
+
+    /**
+     * Re-handshake, and notice a window the user simply closed.
+     *
+     * The same belt-and-braces the connect flow carries: `ready` can fire before
+     * the listener is attached, and a popup closed with the X sends nothing at
+     * all — without this the promise never settles and the run's billing hangs
+     * silently forever.
+     */
+    let tries = 0;
+    const interval = setInterval(() => {
+      tries += 1;
+      if (useExt) return;
+      if (win?.closed) {
+        finish(reject, new Error('payment declined'));
+        return;
+      }
+      if (tries > 150) {
+        finish(reject, new Error('Lute did not answer'));
+        return;
+      }
+      try {
+        win?.postMessage({ action: 'sign', txns: request }, '*');
+      } catch {
+        /* the popup is on another origin until it loads; ignore and retry */
+      }
+    }, 800);
+  });
+}
+
+/**
  * Connect to a wallet (Lute, Pera, Defly, Exodus, KMD).
  */
 export async function connectWallet(providerId) {
@@ -629,11 +742,34 @@ export function getWalletSigner() {
   return {
     address: walletState.address,
     signTransactions: async (txns) => {
-      const injected = window.algorand || window.exodus?.algorand || window.pera || window.defly || window.lute;
+      /**
+       * An injected wallet first, then the road the user actually came in by.
+       *
+       * This used to be the injected branch and a throw, which quietly made
+       * signing impossible for every wallet connected over the WEB — which is
+       * most of them, and certainly Lute, whose connect flow is a popup and a
+       * postMessage and leaves nothing on `window`. The panel showed an address
+       * and a balance, reported itself connected, and could not move a single
+       * microALGO: a run finished, `settleRun` reached the signer, and the
+       * signer threw. No wallet prompt, twice reported, with every layer either
+       * side of it testing green.
+       *
+       * ARC-0001 both ways: an array of `{txn}` where `txn` is base64 msgpack,
+       * answered in the same order.
+       */
+      const injected =
+        window.algorand || window.exodus?.algorand || window.pera || window.defly || window.lute;
+
       if (injected && typeof injected.signTxns === 'function') {
-        return injected.signTxns(txns);
+        return injected.signTxns(txns.map((t) => (typeof t === 'string' ? { txn: t } : t)));
       }
-      throw new Error('Active wallet does not support in-browser transaction signing.');
+
+      if (walletState.providerId === 'lute') return requestLuteSign(txns);
+
+      throw new Error(
+        `${walletState.providerName || 'This wallet'} cannot sign from the side panel. ` +
+          'Reconnect with Lute, or install this wallet as a browser extension.'
+      );
     }
   };
 }
