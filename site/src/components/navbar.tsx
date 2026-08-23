@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Instagram, Linkedin, Twitter } from "lucide-react";
 import { LogoMark } from "@/components/logo-mark";
+import { WalletConnect } from "@/components/wallet-connect";
 import { cn } from "@/lib/utils";
 
 /**
@@ -88,6 +89,7 @@ export function Navbar() {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <WalletConnect />
           {SOCIALS.map(({ label, icon: Icon, href }) => (
             <a
               key={label}
