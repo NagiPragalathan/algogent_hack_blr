@@ -174,7 +174,11 @@ await startAgentRun({
 
 const done = posts.find((p) => p.type === 'AGENT_DONE');
 ok('it answers rather than erroring', Boolean(done) && !posts.some((p) => p.type === 'AGENT_ERROR'));
-ok('and says what to type instead', /Agent Mode off|would like done/.test(done?.answer || ''), done?.answer);
+// One line, not a lecture: this is answering a greeting, and the first
+// version delivered three worked examples every time — twice in a row to
+// somebody who typed "hyy" twice.
+ok('and says what to type instead', /tell me what to do on this page/i.test(done?.answer || ''), done?.answer);
+ok('in one line, not a lecture', (done?.answer || '').length < 140, String((done?.answer || '').length));
 ok(
   'the composer is released',
   posts.some((p) => p.type === 'AGENT_FINISHED' && p.runId === 'r1')

@@ -67,6 +67,7 @@ src/background/          the service worker and everything behind it
 
 tests/
   direct/notrack.test.mjs  the engine driven on a faked stream: node tests/direct/notrack.test.mjs
+  direct/scrub.test.mjs    citation scaffolding, and that both copies of it agree
   agent/run-slot.test.mjs  the one-run-at-a-time slot, and Stop unwinding
   agent/survey-turn.test.mjs  the plan and the first action in one round trip
   agent/not-a-task.test.mjs   "hyy" must not take over the browser
@@ -391,6 +392,34 @@ Events with no text anywhere the reader looks is the shape having moved, and the
 error names the top-level keys that DID arrive, which turns the next fix from a
 bisect into five minutes. Under `strict` none of this falls back to a window, so
 the sentence is the whole of what the user gets — it has to carry its weight.
+
+**A citation the client could not resolve reaches BOTH roads, and `scrub` only
+knew the delimited form.** `:contentReference[oaicite:0]{index=0}` is markup
+ChatGPT's web client is supposed to turn into a source chip, and it involves
+none of the private-use delimiters the rules below strip — so it passed through
+untouched. Measured on a train-fares run, printed under the answer in the panel:
+*"…and another ₹1,046–₹1,931. :contentReference[oaicite:0]{index=0}
+:contentReference[oaicite:1]{index=1}"*. In an agent run it is worse than
+cosmetic: the answer is a JSON string and this lands inside it, so it is saved
+with the conversation.
+
+It also reaches the WINDOW path, which the note below does not cover. That note
+is true of the delimited spans — the client really does render those away — and
+false of this one, which is precisely what the client leaves behind when a
+citation fails to resolve. So it is in the DOM as ordinary text and
+`htmlToMarkdown` carries it out faithfully. `scrubScaffold` in `adapter.js`
+strips it in `nodeText`, the one place every reply passes through, streamed
+deltas included.
+
+That is a second copy of the same regexes, and this file cannot import — so
+`tests/direct/scrub.test.mjs` lifts the copy out of `adapter.js` with a
+`new Function` and drives it over the same table as `scrub`. The drift it guards
+is silent in the worst way: one road clean, the other printing markup.
+
+The bracket form `【oaicite:0†source】` goes too, and the DAGGER is what makes
+that rule safe. Corner brackets appear in ordinary text — quoting Japanese,
+naming a title — and a rule matching those alone would eat part of a real
+answer. Nothing but a citation puts a U+2020 between them.
 
 **The window path rendered ChatGPT's own markup away; the direct path hands it
 to you raw.** Citations, file references and navigation lists travel in the

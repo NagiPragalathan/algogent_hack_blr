@@ -196,12 +196,18 @@ export async function startAgentRun({ msg, settings, providers, post }) {
     post({
       type: 'AGENT_DONE',
       runId: msg.runId,
+      /**
+       * One line, because it is answering a greeting.
+       *
+       * The first version was two paragraphs with three worked examples in it —
+       * a lecture, delivered every time, and delivered TWICE in a row to
+       * somebody who typed "hyy" twice. The refusal is right; its volume was
+       * not. Whatever is wrong here the user already knows: Agent Mode is lit,
+       * they can see it, and the only thing they need is the nudge.
+       */
       answer:
-        'That is not something I can do on a page, so nothing was opened and ' +
-        'your tabs were left alone.\n\nTell me what you would like done here — ' +
-        '"read the top 5 unread emails", "fill this form in from my CV", ' +
-        '"find the cheapest flight on this page" — or switch Agent Mode off to ' +
-        'just chat.',
+        'Agent Mode is on, so tell me what to do on this page — or turn it off ' +
+        'to just chat.',
       steps: 0
     });
     post({ type: 'AGENT_FINISHED', runId: msg.runId });

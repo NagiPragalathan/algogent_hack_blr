@@ -439,12 +439,46 @@ const SCAFFOLD_TAIL = /\uE200[^\uE201]*$/;
  */
 const SCAFFOLD_BARE = /(?:file)?(?:cite|navlist|video)turn\d+\w*/g;
 
+/**
+ * The form ChatGPT leaves behind when its OWN renderer does not resolve a
+ * citation, rather than when we read the stream ahead of it.
+ *
+ * `:contentReference[oaicite:0]{index=0}` is markup the web client is supposed
+ * to turn into a source chip, and it survives every path here: the private-use
+ * delimiters the rules above strip are not involved, so `scrub` passed it
+ * through untouched and the panel printed it at the reader. Measured on a train
+ * fares run — the answer ended
+ * "…and another ₹1,046–₹1,931. :contentReference[oaicite:0]{index=0}
+ * :contentReference[oaicite:1]{index=1}" — which reads as the extension having
+ * broken, not as ChatGPT having sent scaffolding.
+ *
+ * It is worse than cosmetic in a run: the agent's answer is a JSON string, and
+ * this lands INSIDE it, so the user's saved answer carries it too.
+ *
+ * Written as its own rule rather than folded into SCAFFOLD_BARE because the
+ * shapes have nothing in common — that one matches a bare `turn<n>` suffix
+ * welded to the previous word, this one is a complete bracketed expression.
+ */
+const SCAFFOLD_REFERENCE = /:?contentReference\[[^\]]*\]\{[^}]*\}/g;
+
+/**
+ * The older bracket citation, e.g. `【oaicite:0†source】` or `【4:1†file.pdf】`.
+ *
+ * The dagger is what makes this safe to strip: CJK corner brackets appear in
+ * ordinary text — quoting Japanese, naming a title — and a rule matching those
+ * alone would eat part of a legitimate answer. Nothing but this citation form
+ * puts a U+2020 between them.
+ */
+const SCAFFOLD_BRACKET = /\u3010[^\u3011]*\u2020[^\u3011]*\u3011/g;
+
 /** Answer text as the reader was meant to see it. */
 export function scrub(text) {
   return String(text)
     .replace(SCAFFOLD_SPAN, '')
     .replace(SCAFFOLD_TAIL, '')
     .replace(SCAFFOLD_BARE, '')
+    .replace(SCAFFOLD_REFERENCE, '')
+    .replace(SCAFFOLD_BRACKET, '')
     // Anything left is a marker whose partner never arrived.
     .replace(/[\uE200-\uE20F]/g, '')
     .replace(/[ \t]+\n/g, '\n')

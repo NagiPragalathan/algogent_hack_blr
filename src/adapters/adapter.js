@@ -1098,10 +1098,42 @@
     return inThreadOrder(pickAll('user').filter((el) => el.getClientRects().length > 0));
   }
 
+  /**
+   * Citation scaffolding the provider's own renderer left in the page.
+   *
+   * The twin of `scrub()` in `transport/direct/chatgpt.js`, and deliberately a
+   * copy: this file is a classic content script and cannot import. Keep the two
+   * in step — if you add a shape there, add it here.
+   *
+   * It is needed on THIS path too, which is not obvious. The note in AGENTS.md
+   * says the window path "rendered ChatGPT's own markup away", and that is true
+   * of the private-use spans, which the web client turns into source chips. It
+   * is not true of `:contentReference[oaicite:0]{index=0}`, which is what the
+   * client leaves behind when a citation does not resolve — so it reaches the
+   * DOM as ordinary text and `htmlToMarkdown` faithfully carries it out.
+   *
+   * Applied in `nodeText` because that is the one place every reply passes
+   * through, streamed deltas included.
+   */
+  const SCAFFOLD = [
+    /[\uE200][\s\S]*?[\uE201]/g,
+    /[\uE200][^\uE201]*$/,
+    /(?:file)?(?:cite|navlist|video)turn\d+\w*/g,
+    /:?contentReference\[[^\]]*\]\{[^}]*\}/g,
+    /\u3010[^\u3011]*\u2020[^\u3011]*\u3011/g,
+    /[\uE200-\uE20F]/g
+  ];
+
+  function scrubScaffold(text) {
+    let out = String(text || '');
+    for (const rule of SCAFFOLD) out = out.replace(rule, '');
+    return out.replace(/[ \t]+\n/g, '\n').trim();
+  }
+
   function nodeText(el) {
     if (!el) return '';
     const md = htmlToMarkdown(el);
-    return md || (el.innerText || '').trim();
+    return scrubScaffold(md || (el.innerText || '').trim());
   }
 
   function latestAssistantText() {
