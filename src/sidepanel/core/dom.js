@@ -12,6 +12,9 @@ const $ = (id) => document.getElementById(id);
 export const els = {
   // topbar
   convoTitle: $('convo-title'),
+  walletPill: $('wallet-pill'),
+  walletDot: $('wallet-dot'),
+  walletLabel: $('wallet-label'),
   providerPill: $('provider-pill'),
   providerName: $('provider-name'),
   providerDot: $('provider-dot'),
@@ -72,6 +75,9 @@ export const els = {
   agentPolicy: $('agent-policy'),
 
   // sheets
+  walletMenu: $('wallet-menu'),
+  walletClose: $('wallet-close'),
+  walletContent: $('wallet-content'),
   plusMenu: $('plus-menu'),
   plusClose: $('plus-close'),
   pickMenu: $('pick-menu'),

@@ -21,6 +21,7 @@
 @import url('styles/base.css');
 
 @import url('styles/topbar.css');
+@import url('styles/wallet.css');
 @import url('styles/sheets.css');
 /* After sheets.css: the skill editor is a sheet with a form in it, and both the
    taller box and the file rows override what a plain sheet declares. */
