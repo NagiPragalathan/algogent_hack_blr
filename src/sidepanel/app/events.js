@@ -33,6 +33,7 @@ import { attachFiles, closeShot, renderAttachmentChips } from '../ui/attachments
 import { chooseWorkspace, clearWorkspace } from '../ui/workspace.js';
 import { ask, autosize, stopEverything, syncComposer } from '../ui/composer.js';
 import { renderRunning } from '../ui/running.js';
+import { renderWalletSheet, refreshWalletBalance } from '../ui/wallet.js';
 
 /**
  * Every listener the panel installs, in one place.
@@ -51,6 +52,7 @@ export function bindEvents() {
   bindSkillSheets();
   bindTabPicker();
   bindProviderSheet();
+  bindWalletEvents();
   bindTopbar();
   bindHistoryDrawer();
   bindOverflowMenu();
@@ -503,6 +505,27 @@ function bindProviderSheet() {
   });
 }
 
+function bindWalletEvents() {
+  if (!els.walletPill) return;
+
+  els.walletPill.addEventListener('click', (e) => {
+    e.stopPropagation();
+    els.plusMenu.hidden = true;
+    els.providerMenu.hidden = true;
+    els.walletMenu.hidden = !els.walletMenu.hidden;
+    if (!els.walletMenu.hidden) {
+      renderWalletSheet();
+      refreshWalletBalance();
+    }
+  });
+
+  if (els.walletClose) {
+    els.walletClose.addEventListener('click', () => {
+      els.walletMenu.hidden = true;
+    });
+  }
+}
+
 function bindTopbar() {
   els.btnNew.addEventListener('click', async () => {
     for (const id of targetProviders()) send({ type: 'NEW_CHAT', providerId: id, sessionId: state.session?.id ?? null });
@@ -589,6 +612,7 @@ function bindDismissals() {
     // Topmost first: the picker opens over the skills sheet, and the editor
     // over both.
     if (!els.lightbox.hidden) closeShot();
+    else if (els.walletMenu && !els.walletMenu.hidden) els.walletMenu.hidden = true;
     else if (!els.skillEdit.hidden) closeSkillEditor();
     else if (!els.skillPick.hidden) closeSkillFiles();
   });
@@ -598,6 +622,9 @@ function bindDismissals() {
 
     if (!els.plusMenu.contains(e.target)) els.plusMenu.hidden = true;
     if (!els.providerMenu.contains(e.target)) els.providerMenu.hidden = true;
+    if (els.walletMenu && !els.walletMenu.contains(e.target) && !els.walletPill.contains(e.target)) {
+      els.walletMenu.hidden = true;
+    }
     if (!els.skillsMenu.contains(e.target)) els.skillsMenu.hidden = true;
     if (!els.workspaceMenu.contains(e.target) && !els.plusMenu.contains(e.target)) {
       els.workspaceMenu.hidden = true;

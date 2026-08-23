@@ -10,6 +10,11 @@
     <header class="topbar">
       <span class="convo-title" id="convo-title">New chat</span>
       <div class="topbar-actions">
+        <button class="wallet-pill" id="wallet-pill" title="Connect Wallet (x402 / Algorand)">
+          <span class="wallet-dot" id="wallet-dot"></span>
+          <span data-icon="wallet" data-icon-size="14"></span>
+          <span id="wallet-label">Connect</span>
+        </button>
         <button class="provider-pill" id="provider-pill" title="Which assistant answers">
           <span class="dot" id="provider-dot"></span>
           <span id="provider-name">ChatGPT</span>
@@ -324,6 +329,17 @@
             <button class="ghost-btn" id="skill-pick-skip">Send without a file</button>
             <button class="primary-btn" id="skill-pick-use">Attach</button>
           </div>
+        </div>
+
+        <div class="sheet" id="wallet-menu" hidden>
+          <div class="sheet-head">
+            <div>
+              <strong>Connect Wallet</strong>
+              <div class="wallet-sheet-sub">x402 Protocol • Algorand TestNet</div>
+            </div>
+            <button class="icon-btn" id="wallet-close" title="Close" data-icon="close"></button>
+          </div>
+          <div id="wallet-content"></div>
         </div>
 
         <div class="sheet" id="provider-menu" hidden>

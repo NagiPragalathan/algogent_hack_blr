@@ -24,6 +24,7 @@ import { refreshContext } from './ui/context.js';
 import { handlePortMessage } from './app/messages.js';
 import { bindEvents } from './app/events.js';
 import { watchTheme } from './ui/theme.js';
+import { initWallet } from './ui/wallet.js';
 
 /** How long to wait for the worker before saying it is not there. */
 const WORKER_TIMEOUT_MS = 4000;
@@ -37,6 +38,7 @@ async function boot() {
 
   await restoreThread();
   await loadSkills();
+  await initWallet();
 
   bindEvents();
   renderThread();
