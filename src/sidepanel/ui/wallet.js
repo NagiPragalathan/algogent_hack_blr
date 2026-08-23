@@ -863,6 +863,10 @@ export function renderWalletSheet() {
                   ${icon('refresh', 13)} Refresh
                 </button>`
           }
+          <button class="wallet-action-btn" id="wallet-testpay-btn"
+                  title="Send one real x402 payment so you can check signing works">
+            Test x402 payment
+          </button>
           <button class="wallet-action-btn disconnect" id="wallet-disconnect-btn">
             Disconnect
           </button>
@@ -885,6 +889,48 @@ export function renderWalletSheet() {
         flashHint('Address copied to clipboard', 2000);
       } catch {
         flashHint('Failed to copy address', 2000);
+      }
+    });
+
+    /**
+     * Send one real payment, now, and say what happened either way.
+     *
+     * The whole value is that it is the SAME path a run settles through —
+     * quote, wallet prompt, settle, receipt. A button that mocked any of
+     * that would report on a road nobody uses.
+     *
+     * Awaited, unlike every other charge in this panel, and that is the one
+     * deliberate difference: nothing is waiting on it, the user pressed it
+     * on purpose, and the answer is the entire reason it exists.
+     */
+    const testPayBtn = els.walletContent.querySelector('#wallet-testpay-btn');
+    testPayBtn?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (testPayBtn.disabled) return;
+
+      testPayBtn.disabled = true;
+      const label = testPayBtn.textContent;
+      testPayBtn.textContent = 'Waiting for your wallet…';
+      flashHint('Approve the payment in your wallet…', 4000);
+
+      try {
+        const { testPayment } = await import('../payments/run-billing.js');
+        const { state } = await import('../core/state.js');
+        const result = await testPayment(state.session?.id ?? null);
+
+        if (result?.paid) {
+          flashHint('Paid — the receipt is under your last answer.', 4000);
+        } else {
+          // The reason is the product here, so it is shown in full and for
+          // long enough to read. It is also filed by `settleRun`'s wrapper,
+          // so it survives the hint disappearing.
+          flashHint(`Not charged — ${result?.reason || 'no reason given'}`, 9000);
+        }
+      } catch (error) {
+        flashHint(`Test payment failed — ${error?.message || error}`, 9000);
+      } finally {
+        testPayBtn.disabled = false;
+        testPayBtn.textContent = label;
       }
     });
 

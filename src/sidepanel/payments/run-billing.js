@@ -130,6 +130,31 @@ export function dropRun(runId) {
   pending.delete(runId);
 }
 
+/**
+ * One real x402 payment, on demand, so signing can be checked without a run.
+ *
+ * Everything else here settles at the END of something — a run finishing, a
+ * question answered — which makes "is the wallet actually wired up?" a
+ * question you can only answer by doing a minute of unrelated work first.
+ * Every failure in this layer has been diagnosed that way and it is a bad
+ * loop: an agent run, a wait, and an outcome with four possible causes.
+ *
+ * Deliberately NOT a mock and not a separate road. It is the same
+ * quote → sign → settle → receipt the panel uses, with one item and no agent
+ * in front of it — a test button that exercises a different path only tells
+ * you about the path you do not use.
+ *
+ * It costs one action, really, on whatever network the wallet is on. That is
+ * the point, and the button says so.
+ */
+export function testPayment(sessionId) {
+  const runId = `test-${Date.now().toString(36)}`;
+  pending.set(runId, [
+    { agentId: ANSWER_AGENT_ID, label: 'Test payment from the wallet panel', step: null }
+  ]);
+  return settleRun(runId, sessionId);
+}
+
 /** The one decline that is not worth telling anybody about. See below. */
 const NOTHING_TO_BILL = 'nothing billable here';
 
@@ -236,8 +261,40 @@ async function attemptSettle(runId, sessionId) {
     signed = await signer.signTransactions(flat);
   } catch (error) {
     const message = String(error?.message || error);
+
+    if (/reject|denied|cancel|closed/i.test(message)) return declined('payment declined');
+
+    const shortBuyer = `${buyer.slice(0, 6)}…${buyer.slice(-4)}`;
+
+    /**
+     * "Account Not Found" is the panel and the wallet disagreeing about WHO.
+     *
+     * The panel remembers the address it was connected with; the wallet holds
+     * whatever accounts it currently holds. Those drift apart in the most
+     * ordinary ways — a different account selected in the wallet, a web
+     * session cleared, a second wallet — and nothing tells the panel, because
+     * a connection is a one-time handshake that returns an address and then
+     * nothing else ever again.
+     *
+     * Measured: the panel signing as B55UYG…5KXU while the wallet on screen
+     * held ZYQRMSLG…333YM. Two different accounts, one honest error, and no
+     * hint anywhere that reconnecting was the whole fix. The wallet's own
+     * wording cannot say this — only we know which address we asked for.
+     */
+    if (/account not found|no account|unknown account/i.test(message)) {
+      return declined(
+        `Your wallet does not have ${shortBuyer}, which is the account this panel ` +
+          `is connected as. Open the wallet panel, Disconnect, and reconnect with ` +
+          `the account you want to pay from.`
+      );
+    }
+
+    /**
+     * Everything else: the wallet's own words, plus the two facts it never
+     * includes — which account we asked it to sign as, and on which network.
+     */
     return declined(
-      /reject|denied|cancel|closed/i.test(message) ? 'payment declined' : message
+      `${message} — signing as ${shortBuyer} on ${network || walletState.network}.`
     );
   }
 
