@@ -118,3 +118,39 @@ CREATE OR REPLACE VIEW developer_earnings AS
   LEFT JOIN agents   a ON a.developer_id = d.id
   LEFT JOIN receipts r ON r.agent_id = a.id
   GROUP BY d.id, d.payout_address;
+
+-- One row per ACTION paid for inside a run.
+--
+-- A run is thirty actions and a wallet popup per action is unusable, so a run
+-- signs ONCE at the end. But "one signature" must not collapse into "one
+-- payment" — the whole point of the receipt is which tool got how much, and a
+-- single lump sum with a percentage table beside it is exactly the claim this
+-- is meant to replace.
+--
+-- So the group carries one payment LEG per action plus one company leg, and
+-- every leg has its own transaction id on chain. Algorand caps a group at 16,
+-- which is why a long run settles in more than one group and this table is
+-- keyed on the receipt rather than assuming one.
+CREATE TABLE IF NOT EXISTS receipt_items (
+  id           BIGSERIAL PRIMARY KEY,
+  receipt_id   BIGINT NOT NULL REFERENCES receipts(id) ON DELETE CASCADE,
+
+  -- The registered agent this action belongs to (navigate, read_url, click …).
+  agent_id     TEXT NOT NULL REFERENCES agents(id) ON DELETE RESTRICT,
+  -- What the step said in the timeline, so the receipt line matches the step
+  -- the user watched rather than naming an internal verb.
+  action_label TEXT NOT NULL,
+  step_index   INTEGER,
+
+  micro_algo   BIGINT NOT NULL CHECK (micro_algo > 0),
+  -- Its own leg, its own transaction. This is the column that makes a receipt
+  -- line independently checkable on a public explorer.
+  txid         TEXT NOT NULL,
+
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  UNIQUE (txid)
+);
+
+CREATE INDEX IF NOT EXISTS receipt_items_receipt_idx ON receipt_items (receipt_id, step_index);
+CREATE INDEX IF NOT EXISTS receipt_items_agent_idx   ON receipt_items (agent_id, created_at DESC);

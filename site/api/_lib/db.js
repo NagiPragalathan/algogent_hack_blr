@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless';
 import { required, ALGORAND_ADDRESS } from './http.js';
+import { companyPayoutAddress, companyFeeBps, activeNetworkName } from './config.js';
 
 /**
  * One connection per invocation, over HTTP rather than a socket — which is what
@@ -24,12 +25,12 @@ export const sql = neon(required('DATABASE_URL'));
  * paid.
  */
 export function feeConfig() {
-  const address = required('COMPANY_PAYOUT_ADDRESS');
+  const address = companyPayoutAddress();
   if (!ALGORAND_ADDRESS.test(address)) {
     throw new Error('COMPANY_PAYOUT_ADDRESS is not a valid Algorand address');
   }
 
-  const bps = Number(process.env.COMPANY_FEE_BPS ?? 2000);
+  const bps = companyFeeBps();
   if (!Number.isInteger(bps) || bps < 0 || bps > 10_000) {
     throw new Error(`COMPANY_FEE_BPS must be an integer 0..10000, got ${bps}`);
   }
@@ -39,7 +40,7 @@ export function feeConfig() {
 
 /** The network the marketplace settles on. TestNet unless told otherwise. */
 export function activeNetwork() {
-  const network = process.env.X402_NETWORK || 'testnet';
+  const network = activeNetworkName();
   if (!['testnet', 'mainnet', 'localnet'].includes(network)) {
     throw new Error(`X402_NETWORK must be testnet, mainnet or localnet, got ${network}`);
   }

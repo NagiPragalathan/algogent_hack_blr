@@ -30,13 +30,36 @@ const el = (tag, className, text) => {
 };
 
 /**
- * One payment.
+ * One payment leg: what it was for, where it went, and its transaction.
  *
- * The developer's share and the marketplace's are shown as separate lines
- * rather than as one total with a percentage beside it. A percentage is a claim
- * about a calculation; two amounts that visibly add up to the total are the
- * calculation itself, and this is the block whose whole job is being checkable.
+ * Every leg is drawn separately rather than as a total with a percentage beside
+ * it. A percentage is a claim about a calculation; a list of amounts that
+ * visibly adds up to the total IS the calculation, and this is the block whose
+ * whole job is being checkable.
  */
+function legRow(label, { address, microAlgo, txid, explorer }) {
+  const item = el('li', 'receipt-leg');
+  item.append(el('span', 'receipt-leg-label', label));
+
+  const to = el('span', 'receipt-address', ellipseAddress(address, 6, 4));
+  to.title = address;
+  item.append(to);
+
+  item.append(el('span', 'receipt-leg-amount', `${toAlgo(microAlgo)} ALGO`));
+
+  if (explorer) {
+    const link = el('a', 'receipt-txid', 'view');
+    link.href = explorer;
+    link.target = '_blank';
+    link.rel = 'noreferrer';
+    // The full transaction id, for anyone who wants to paste it elsewhere.
+    link.title = txid || '';
+    item.append(link);
+  }
+
+  return item;
+}
+
 function receiptRow(receipt) {
   const row = el('li', 'receipt');
 
@@ -45,37 +68,43 @@ function receiptRow(receipt) {
   head.append(el('span', 'receipt-total', `${toAlgo(receipt.total?.microAlgo)} ALGO`));
   row.append(head);
 
+  /**
+   * Who paid. Shown on a run receipt and not on a skill one, because a run
+   * settles a batch minutes after the wallet was last visible and "which
+   * account did that leave from" stops being obvious.
+   */
+  if (receipt.from) {
+    const from = el('div', 'receipt-from');
+    from.append(el('span', 'receipt-leg-label', 'From'));
+    const address = el('span', 'receipt-address', ellipseAddress(receipt.from, 6, 4));
+    address.title = receipt.from;
+    from.append(address);
+    row.append(from);
+  }
+
   const legs = el('ul', 'receipt-legs');
 
-  const leg = (label, share) => {
-    if (!share) return;
-    const item = el('li', 'receipt-leg');
-    item.append(el('span', 'receipt-leg-label', label));
-
-    const address = el('span', 'receipt-address', ellipseAddress(share.address, 6, 4));
-    address.title = share.address;
-    item.append(address);
-
-    item.append(el('span', 'receipt-leg-amount', `${toAlgo(share.microAlgo)} ALGO`));
-
-    if (share.explorer) {
-      const link = el('a', 'receipt-txid', 'view');
-      link.href = share.explorer;
-      link.target = '_blank';
-      link.rel = 'noreferrer';
-      // The full transaction id, for anyone who wants to paste it elsewhere.
-      link.title = share.txid || '';
-      item.append(link);
+  if (receipt.lines?.length) {
+    /**
+     * A run: one line per action, each with its own transaction.
+     *
+     * This is the whole reason a run pays with a leg per action rather than one
+     * lump sum — every line here is independently checkable, and the step index
+     * ties it back to the step in the timeline the user watched happen.
+     */
+    for (const line of receipt.lines) {
+      const label = line.step == null ? line.label : `${line.step}. ${line.label}`;
+      legs.append(legRow(label, { address: line.to, microAlgo: line.microAlgo, txid: line.txid, explorer: line.explorer }));
     }
-
-    legs.append(item);
-  };
-
-  leg('Developer', receipt.developer);
-  leg(
-    receipt.company ? `Marketplace ${(receipt.company.bps / 100).toFixed(0)}%` : 'Marketplace',
-    receipt.company
-  );
+  } else {
+    // A skill purchase: two legs, the developer and the marketplace.
+    if (receipt.developer) legs.append(legRow('Developer', receipt.developer));
+    if (receipt.company) {
+      legs.append(
+        legRow(`Marketplace ${(receipt.company.bps / 100).toFixed(0)}%`, receipt.company)
+      );
+    }
+  }
 
   row.append(legs);
 
@@ -108,7 +137,7 @@ export async function buildReceiptBlock(sessionId) {
 
   const header = el('div', 'receipts-head');
   header.append(
-    el('span', 'receipts-title', `Fees · ${totals.calls} ${totals.calls === 1 ? 'call' : 'calls'}`)
+    el('span', 'receipts-title', `Fees · ${totals.actions} ${totals.actions === 1 ? 'action' : 'actions'}`)
   );
   header.append(el('span', 'receipts-total', `${toAlgo(totals.spentMicroAlgo)} ALGO`));
   block.append(header);

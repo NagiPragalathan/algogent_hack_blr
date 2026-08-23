@@ -188,4 +188,48 @@ export async function submitAndConfirm(network, signedBase64List, waitRounds = 8
   };
 }
 
+/**
+ * Which of these addresses cannot receive a small payment yet.
+ *
+ * Algorand refuses a transfer that would leave the RECEIVER below the 0.1 ALGO
+ * minimum balance — so a brand new address cannot be paid 0.0008 ALGO. It has
+ * to be funded past that line once, by anyone, before micropayments to it work
+ * at all.
+ *
+ * This is the single most likely thing to break a first demo, and the chain's
+ * own error for it ("below min balance") arrives after the user has signed,
+ * names no address, and looks identical to being out of funds. Checking at
+ * QUOTE time instead means the problem is reported before anyone is asked to
+ * sign, and names exactly which account needs topping up.
+ *
+ * Failures are ignored on purpose: this is a courtesy check, and an algod
+ * hiccup must not stop a payment that would have worked.
+ */
+export async function unfundedReceivers(network, receivers, incoming) {
+  const algod = algodFor(network);
+  const short = [];
+
+  await Promise.all(
+    [...new Set(receivers)].map(async (address) => {
+      try {
+        const info = await algod.accountInformation(address).do();
+        const balance = Number(info.amount);
+        const arriving = incoming[address] || 0;
+        if (balance === 0 && arriving < MIN_BALANCE) {
+          short.push({ address, balance, arriving, needs: MIN_BALANCE });
+        }
+      } catch {
+        // A 404 from algod means the account has never been funded, which is
+        // exactly the case above — but it is also what a network blip looks
+        // like, so it is left alone rather than guessed at.
+      }
+    })
+  );
+
+  return short;
+}
+
+/** Algorand's minimum balance for a plain account, in microALGO. */
+export const MIN_BALANCE = 100_000;
+
 export { algosdk };

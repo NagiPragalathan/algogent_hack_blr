@@ -43,14 +43,24 @@ async function boot() {
   await initPayments();
 
   /**
-   * Which skills are payable, fetched once and never awaited.
+   * What is payable, fetched once and never awaited.
    *
    * Awaiting it would put a network round trip in front of the first paint for
-   * information nothing on screen needs yet — the answer is only wanted at the
-   * moment a skill is used. A listing that never arrives means every skill is
-   * free, which is the safe direction and the one this whole layer defaults to.
+   * information nothing on screen needs yet. A listing that never arrives means
+   * everything is free, which is the safe direction and the one this whole layer
+   * defaults to.
+   *
+   * The WHOLE catalogue, and passing the skill ids here was a bug that silently
+   * switched off every other kind of billing. `?ids=` is an optimisation for a
+   * panel that only ever charged for skills; the registry also carries one entry
+   * per agent ACTION (`act-navigate`, `act-click`, …) and one for an answer
+   * (`act-answer`), and none of those are skills. Asking for the skill ids alone
+   * meant `priceOf('act-navigate')` was null for every step of every run, so
+   * `noteAction` dropped all of them and `settleRun` reported "nothing billable"
+   * — with no error anywhere, because a missing registry entry legitimately
+   * means free. Measured: a two-step Gmail run finished with no receipt at all.
    */
-  void loadListing(state.skills.map((skill) => skill.id));
+  void loadListing();
 
   bindEvents();
   renderThread();

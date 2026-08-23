@@ -106,6 +106,42 @@
         ]
       };
 
+      // A whole agent run: one signature, but a leg — and a txid — per action.
+      store['x402_receipts_v1'][SESSION].push({
+        receiptId: 3,
+        kind: 'run',
+        toolLabel: '4 agent actions',
+        from: '3BRI65KXINMWQ2OFHMNFC5HQFX5XMC65KNFS2LKX3UM6Y5UYPISOVRYVMM',
+        network: 'testnet',
+        confirmedRound: 66588100,
+        total: { microAlgo: 4_000, algo: '0.004000' },
+        developerTotal: { microAlgo: 3_200, algo: '0.003200' },
+        companyTotal: { microAlgo: 800, algo: '0.000800' },
+        networkFee: { microAlgo: 5_000, algo: '0.005000' },
+        lines: [
+          { agentId: 'act-navigate', label: 'Opened a starting page', step: 0,
+            to: 'ZYQRMSLGHOFS6ZKCOXND4VFHCT5ZNMMGMFBMF7QBU4ITADHYAVWDF333YM',
+            microAlgo: 800, algo: '0.000800', txid: 'A1',
+            explorer: 'https://lora.algokit.io/testnet/transaction/A1' },
+          { agentId: 'act-navigate', label: 'Go to https://mail.google.com/', step: 1,
+            to: 'ZYQRMSLGHOFS6ZKCOXND4VFHCT5ZNMMGMFBMF7QBU4ITADHYAVWDF333YM',
+            microAlgo: 800, algo: '0.000800', txid: 'A2',
+            explorer: 'https://lora.algokit.io/testnet/transaction/A2' },
+          { agentId: 'act-observe', label: 'Read the inbox', step: 1,
+            to: 'ZYQRMSLGHOFS6ZKCOXND4VFHCT5ZNMMGMFBMF7QBU4ITADHYAVWDF333YM',
+            microAlgo: 800, algo: '0.000800', txid: 'A3',
+            explorer: 'https://lora.algokit.io/testnet/transaction/A3' },
+          { agentId: 'act-click', label: 'Click [12] "Primary"', step: 2,
+            to: 'ZYQRMSLGHOFS6ZKCOXND4VFHCT5ZNMMGMFBMF7QBU4ITADHYAVWDF333YM',
+            microAlgo: 800, algo: '0.000800', txid: 'A4',
+            explorer: 'https://lora.algokit.io/testnet/transaction/A4' },
+          { agentId: null, label: 'Marketplace 20%', step: null,
+            to: '2RYXGHHZSCM4LDY7GAPVAOGGFRPJBY3TVHECI3O5ULT3VLSJYQJRSR4BVU',
+            microAlgo: 800, algo: '0.000800', txid: 'C1',
+            explorer: 'https://lora.algokit.io/testnet/transaction/C1' }
+        ]
+      });
+
       const { renderReceipts } = await import('/src/sidepanel/ui/receipts.js');
       const { totalsOf, receiptsFor, toAlgo } = await import('/src/sidepanel/payments/ledger.js');
 
@@ -116,7 +152,26 @@
       ok('the block renders', Boolean(block));
 
       const rows = thread.querySelectorAll('.receipt');
-      ok('one row per payment', rows.length === 2, `got ${rows.length}`);
+      ok('one row per payment', rows.length === 3, String(rows.length));
+
+      // The run receipt: a leg per action, each with its own transaction.
+      const runRow = rows[2];
+      ok('the run row lists a leg per action + marketplace',
+         runRow.querySelectorAll('.receipt-leg').length === 5,
+         String(runRow.querySelectorAll('.receipt-leg').length));
+      // Scoped to .receipt-legs: the "From" row reuses .receipt-leg-label, and
+      // an unscoped query finds it first.
+      ok('each action leg is numbered by its step',
+         runRow.querySelector('.receipt-legs .receipt-leg-label')?.textContent === '0. Opened a starting page',
+         runRow.querySelector('.receipt-legs .receipt-leg-label')?.textContent);
+      ok('the FROM address is shown on a run',
+         runRow.querySelector('.receipt-from .receipt-address')?.title ===
+         '3BRI65KXINMWQ2OFHMNFC5HQFX5XMC65KNFS2LKX3UM6Y5UYPISOVRYVMM');
+      ok('every action leg links to its own transaction',
+         runRow.querySelectorAll('.receipt-txid').length === 5);
+      ok('the action legs add up to the run total',
+         [...runRow.querySelectorAll('.receipt-leg-amount')]
+           .reduce((n,e)=>n+Math.round(parseFloat(e.textContent)*1e6),0) === 4000);
 
       // The reason this fixture exists at all.
       ok('a hostile tool label did NOT execute', !globalThis.__pwned);
@@ -144,7 +199,10 @@
         thread.querySelector('.receipts-total')?.textContent
       );
 
-      ok('every leg links to a public explorer', thread.querySelectorAll('.receipt-txid').length === 4);
+      // 2 skill receipts x 2 legs, plus the run's 4 actions + 1 marketplace leg.
+      ok('every leg links to a public explorer',
+         thread.querySelectorAll('.receipt-txid').length === 9,
+         String(thread.querySelectorAll('.receipt-txid').length));
       ok(
         'the full address is available on hover',
         thread.querySelector('.receipt-address')?.title.length === 58

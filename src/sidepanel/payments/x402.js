@@ -34,19 +34,29 @@ import { recordReceipt } from './ledger.js';
 /** Where the marketplace lives. Overridable for a local API during development. */
 const DEFAULT_API = 'https://algogent.vercel.app';
 
-let apiBase = DEFAULT_API;
+let base = DEFAULT_API;
+
+/** Where the marketplace lives, read at call time so a stored override applies. */
+export const apiBase = () => base;
 
 export async function initPayments() {
   try {
     const stored = await chrome.storage.local.get('marketplaceApi');
-    if (stored?.marketplaceApi) apiBase = String(stored.marketplaceApi).replace(/\/+$/, '');
+    if (stored?.marketplaceApi) base = String(stored.marketplaceApi).replace(/\/+$/, '');
   } catch {
     // Storage is unavailable in some contexts; the default is fine.
   }
 }
 
 /**
- * Which skills are payable, and what they cost.
+ * What is payable, and what it costs.
+ *
+ * Everything the marketplace lists: published skills, one entry per agent
+ * ACTION, and `act-answer` for a plain question. Deliberately not filtered by
+ * the caller — a filtered listing is indistinguishable from a catalogue where
+ * the missing entries are free, so narrowing it here silently switches off
+ * whole categories of billing. It did exactly that: see the note at the call
+ * site in sidepanel.js.
  *
  * Cached for the life of the panel rather than re-fetched per question: prices
  * change when a developer edits them, not between two messages, and a network
@@ -55,15 +65,30 @@ export async function initPayments() {
  */
 let listing = null;
 
-export async function loadListing(ids = []) {
+/**
+ * Why the listing is not here, if it is not.
+ *
+ * "This id is not priced" and "there are no prices" produce the same silence
+ * one layer up, and they need opposite responses: the first is a free tool
+ * working correctly, the second is billing switched off for the whole panel
+ * with nothing on screen to say so. That was the shape of the bug this file
+ * came out of, so the two are told apart at the source.
+ */
+let listingProblem = '';
+
+export const listingMissing = () => (listing ? '' : listingProblem || 'the price list has not loaded yet');
+
+export async function loadListing() {
   if (listing) return listing;
 
   try {
-    const query = ids.length ? `?ids=${encodeURIComponent(ids.join(','))}` : '';
-    const res = await fetch(`${apiBase}/api/agents${query}`, {
+    const res = await fetch(`${base}/api/agents`, {
       headers: { accept: 'application/json' }
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      listingProblem = `the marketplace answered ${res.status}`;
+      return null;
+    }
 
     const data = await res.json();
     listing = {
@@ -71,17 +96,22 @@ export async function loadListing(ids = []) {
       companyBps: data.companyBps,
       byId: new Map(data.agents.map((a) => [a.id, a]))
     };
+    listingProblem = '';
     return listing;
   } catch {
     // No listing means nothing is payable, which is the safe direction.
+    listingProblem = 'the marketplace could not be reached';
     return null;
   }
 }
 
-/** What a skill costs, or null if it is free. */
-export function priceOf(skillId) {
-  return listing?.byId.get(skillId) || null;
+/** What something costs, or null if it is free. */
+export function priceOf(agentId) {
+  return listing?.byId.get(agentId) || null;
 }
+
+/** Which chain the listing settles on, for the wallet-agreement check. */
+export const listedNetwork = () => listing?.network || null;
 
 /**
  * The reasons a call is not charged.
@@ -90,7 +120,8 @@ export function priceOf(skillId) {
  * them is a thing the user might want to fix — and none of them is a failure of
  * the question they just asked.
  */
-const free = (reason) => ({ paid: false, reason });
+export const declined = (reason) => ({ paid: false, reason });
+const free = declined;
 
 /**
  * Pay for one use of one skill.
@@ -122,7 +153,7 @@ export async function payForSkill(skill, { sessionId } = {}) {
 
   let quote;
   try {
-    const res = await fetch(`${apiBase}/api/x402/quote`, {
+    const res = await fetch(`${base}/api/x402/quote`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ agentId: skill.id, buyer: walletState.address, sessionId })
@@ -151,7 +182,7 @@ export async function payForSkill(skill, { sessionId } = {}) {
     // A user declining in their wallet is not an error to report loudly. It is
     // the most ordinary thing that can happen here.
     const message = String(error?.message || error);
-    return free(/reject|denied|cancel|declин|closed/i.test(message) ? 'payment declined' : message);
+    return free(/reject|denied|cancel|closed/i.test(message) ? 'payment declined' : message);
   }
 
   if (!Array.isArray(signed) || signed.length !== extra.transactions.length) {
@@ -159,7 +190,7 @@ export async function payForSkill(skill, { sessionId } = {}) {
   }
 
   try {
-    const res = await fetch(`${apiBase}/api/x402/settle`, {
+    const res = await fetch(`${base}/api/x402/settle`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -212,7 +243,7 @@ export function chargeForSkill(skill, sessionId) {
  * or a plain array of bytes. Normalising here rather than at four call sites is
  * the difference between one conversion and four that drift.
  */
-function toBase64(value) {
+export function toBase64(value) {
   if (typeof value === 'string') return value;
 
   const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);

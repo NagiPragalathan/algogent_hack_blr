@@ -61,7 +61,82 @@ export async function recordReceipt(sessionId, receipt) {
   }
 
   await writeAll(all);
+  clearDecline(sessionId);
 }
+
+/**
+ * File a whole run's settlement.
+ *
+ * A run settles once but pays many times, so what comes back is a list of LINES
+ * — one per action, each with its own transaction id — rather than the single
+ * developer/company pair a skill purchase produces. It is normalised into the
+ * same envelope so the renderer has one shape to draw and not two.
+ *
+ * Keyed on the first receipt id for the same reason a skill receipt is keyed on
+ * its own: settling twice after a dropped response must not show the run's cost
+ * doubled.
+ */
+export async function recordRunReceipt(sessionId, settled) {
+  if (!sessionId || !settled?.receiptIds?.length) return;
+
+  const receiptId = Number(settled.receiptIds[0]);
+  const totals = settled.totals || {};
+
+  await recordReceipt(sessionId, {
+    receiptId,
+    kind: 'run',
+    agentId: null,
+    toolLabel: `${totals.actions ?? settled.lines?.length ?? 0} agent actions`,
+    network: settled.network,
+    from: settled.from,
+    paidAt: new Date().toISOString(),
+    total: { microAlgo: totals.totalMicroAlgo, algo: totals.totalAlgo },
+    // Kept flat rather than nested under developer/company: for a run these are
+    // sums across many payees, and pretending they are one payee's line would
+    // make the receipt claim something the chain does not say.
+    developerTotal: { microAlgo: totals.developerMicroAlgo, algo: totals.developerAlgo },
+    companyTotal: { microAlgo: totals.companyMicroAlgo, algo: totals.companyAlgo },
+    networkFee: { microAlgo: totals.networkFeeMicroAlgo, algo: totals.networkFeeAlgo },
+    confirmedRound: settled.groups?.[0]?.confirmedRound ?? null,
+    /** One per action, each independently checkable. */
+    lines: settled.lines || []
+  });
+}
+
+/**
+ * Why the last charge in this conversation did not happen.
+ *
+ * The rule next door — a chat where nothing was charged shows NOTHING, because
+ * an empty "fees: none" under every answer trains people to stop reading the
+ * place the real numbers appear — is right and is not what this is. "Nothing
+ * was charged" and "something should have been charged and could not be" are
+ * different facts, and only the second one is a thing the user can fix: a
+ * wallet that is not connected, one on the wrong chain, a declined signature,
+ * a marketplace that is down.
+ *
+ * Reported because the alternative was measured and is worse: a two-step run
+ * finished with no receipt, no error and no explanation, and from the screen
+ * that is indistinguishable from billing simply not being built. A free action
+ * still says nothing at all — `settleRun` never records that case.
+ *
+ * In memory rather than storage, deliberately. It describes an attempt, not a
+ * payment: there is nothing here anyone needs back after a reload, and writing
+ * failures to disk beside the receipts would make the ledger look like a record
+ * of money that moved.
+ */
+const declines = new Map();
+
+export function recordDecline(sessionId, reason) {
+  if (!sessionId || !reason) return;
+  declines.set(sessionId, { reason: String(reason), at: Date.now() });
+}
+
+/** Cleared by a payment that DOES land, so a stale reason cannot outlive it. */
+export function clearDecline(sessionId) {
+  declines.delete(sessionId);
+}
+
+export const declineFor = (sessionId) => (sessionId ? declines.get(sessionId) || null : null);
 
 /** Every receipt for one conversation, oldest first — the order they ran in. */
 export async function receiptsFor(sessionId) {
@@ -86,9 +161,13 @@ export function totalsOf(receipts) {
 
   return {
     calls: receipts.length,
+    /** Actions billed across the whole conversation, runs included. */
+    actions: receipts.reduce((acc, r) => acc + (r.lines?.length || 1), 0),
     totalMicroAlgo: total,
-    developerMicroAlgo: sum((r) => r.developer?.microAlgo),
-    companyMicroAlgo: sum((r) => r.company?.microAlgo),
+    // A skill receipt names one developer; a run receipt sums many. Both are
+    // read here so a conversation mixing the two still adds up.
+    developerMicroAlgo: sum((r) => r.developer?.microAlgo ?? r.developerTotal?.microAlgo),
+    companyMicroAlgo: sum((r) => r.company?.microAlgo ?? r.companyTotal?.microAlgo),
     networkFeeMicroAlgo: fee,
     spentMicroAlgo: total + fee
   };

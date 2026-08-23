@@ -136,3 +136,15 @@
   font-size: 11px;
   color: var(--text-dim);
 }
+
+/* Who paid. Only a run receipt carries it — a run settles minutes after the
+   wallet was last on screen, so "which account did that leave from" stops
+   being obvious. */
+.receipt-from {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}

@@ -18,6 +18,7 @@ import { paintContext } from '../ui/context.js';
 import { renderTabPicker } from '../ui/tab-picker.js';
 import { renderAttachmentChips } from '../ui/attachments.js';
 import { setBusy, finishIfIdle, setAskProgress, syncComposer } from '../ui/composer.js';
+import { noteAction, settleRun } from '../payments/run-billing.js';
 
 /**
  * A message landed on a turn. Repaint it, or file it away.
@@ -432,6 +433,17 @@ function onAgentPhase(msg) {
 function onAgentStep(msg) {
   const turn = requestTurn(msg.runId);
   if (!turn?.agent) return;
+
+  /**
+   * Every action the run takes is a registered agent with an owner and a price,
+   * so it is recorded here and the whole run is settled once when it finishes.
+   *
+   * Recorded rather than charged: a wallet prompt per step would mean thirty
+   * approvals in a run, and a refusal on the eleventh would strand it halfway
+   * paid. `noteAction` drops anything that is not a priced action, so steps
+   * that are notes or screenshots cost nothing.
+   */
+  noteAction(msg.runId, msg);
   // A new step means the last turn's round trip finished.
   turn.agent.phase = null;
   turn.agent.steps.push({
@@ -528,6 +540,20 @@ function onAgentFinished(msg) {
     turn.agent.pendingConfirm = null;
     if (visible) patchAgent(turn.id);
   }
+
+  /**
+   * The run is over, so now it pays — once, for everything it did.
+   *
+   * Deliberately not awaited. The answer is already on screen and the composer
+   * is about to be released; making either wait on a wallet prompt and a chain
+   * round trip would hold a finished run open for the length of a payment. The
+   * receipt appears under the answer when it settles, and if it never settles
+   * the answer is unaffected.
+   *
+   * Billed against the session that OWNS the run, not the one on screen — the
+   * panel follows tabs, and a run can finish while you are looking elsewhere.
+   */
+  void settleRun(msg.runId, sessionOf(msg.runId) ?? state.session?.id ?? null);
 
   // Dropped BEFORE the composer is re-read, or `syncComposer` still sees this
   // run as live and leaves the Stop button up on a run that has ended.

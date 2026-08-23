@@ -29,14 +29,35 @@ export const BPS = 10_000;
 export const ALGORAND_MIN_FEE = 1_000;
 
 /**
- * The floor a price has to clear before splitting it is honest.
+ * The floor a price has to clear before charging it is honest.
  *
- * Below this the network fee is a larger share of the transfer than the
- * developer's cut, so the buyer pays mostly to move money rather than to buy
- * anything. Ten times the group fee is the line: at 0.02 ALGO the 0.002 in fees
- * is 10%, which is high but defensible for a per-call micropayment.
+ * There is a real economic line here — below some price the network fee is a
+ * larger share of the transfer than the seller's cut, and the buyer is paying
+ * mostly to move money rather than to buy anything. But where that line sits is
+ * a business decision, not a fact, and it is genuinely different for a
+ * production marketplace and for a demo account with 10 TestNet ALGO in it that
+ * has to survive a few hundred runs.
+ *
+ * So it is configurable, and the default is one network fee: at that price the
+ * buyer pays 2x the ticket, which is honest for a demo and plainly too much for
+ * production. Raise it in the environment when this stops being a demo.
  */
-export const MIN_PRICE_MICRO_ALGO = ALGORAND_MIN_FEE * 2 * 10;
+export const MIN_PRICE_MICRO_ALGO = Number(
+  process.env.MIN_PRICE_MICRO_ALGO ?? ALGORAND_MIN_FEE
+);
+
+/**
+ * What one agent action costs, when every action costs the same.
+ *
+ * A flat rate rather than a rate per verb, deliberately. Pricing `navigate`
+ * differently from `read_url` invites an argument about which is worth more
+ * that nobody can settle, and the number the user actually watches is the run
+ * total. One number also means a receipt line is comparable to every other line
+ * without reading a price list.
+ */
+export const DEFAULT_ACTION_PRICE = Number(
+  process.env.ACTION_PRICE_MICRO_ALGO ?? 1_000
+);
 
 /**
  * Split a price between the developer who published the agent and the company

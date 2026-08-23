@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "test": "node --test \"tests/**/*.test.ts\" \"tests/**/*.test.mjs\"",
     "db:apply": "node db/apply.mjs",
-    "test:live": "node tests/x402-live.test.mjs && node tests/api-live.test.mjs"
+    "test:live": "node tests/x402-live.test.mjs && node tests/api-live.test.mjs",
+    "vercel:env": "node db/vercel-env.mjs",
+    "db:seed": "node db/seed-actions.mjs"
   },
   "dependencies": {
     "@fontsource/instrument-serif": "^5.3.0",
