@@ -1,0 +1,167 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * The whole palette is monochrome by design: pure black ground, pure white
+ * ink, and a ladder of greys between them. Values are bare HSL channels with
+ * no hsl() wrapper so Tailwind can alpha-modify any token inline
+ * (`border-border/30`, `bg-background/45`) instead of needing a second
+ * variable per opacity.
+ *
+ * --accent is the single non-grey token and stays deliberately desaturated;
+ * it is a hairline hint, never a fill.
+ */
+@layer base {
+  :root {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+
+    --card: 0 0% 5%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 0 0% 5%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 0 0% 100%;
+    --primary-foreground: 0 0% 0%;
+
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 85%;
+
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 65%;
+
+    --accent: 170 15% 45%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 0% 30%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 20%;
+    --input: 0 0% 18%;
+    --ring: 0 0% 40%;
+
+    /* Hero copy sits a touch below pure white so the heading still leads. */
+    --hero-subtitle: 210 17% 95%;
+
+    --radius: 0.75rem;
+  }
+
+  /* A <select>'s open list and the native caret are drawn by the OS and take
+     their colours from this property alone — no rule on `option` reaches
+     them. Without it Chrome draws light widgets on a black page. */
+  :root {
+    color-scheme: dark;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    /* The hero and CTA videos are wider than the viewport on narrow screens;
+       letting the body scroll sideways would expose the letterbox. */
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background: hsl(var(--foreground));
+    color: hsl(var(--background));
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted));
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--ring));
+  }
+}
+
+/**
+ * Liquid glass.
+ *
+ * The surface itself is almost nothing — 1% white over whatever is behind it,
+ * blurred. What reads as an edge is the ::before ring: a vertical gradient
+ * that is bright at the top and bottom and absent through the middle, masked
+ * to a 1.4px band so only the border is painted. That asymmetry is the whole
+ * effect — a uniform 1px border reads as a box, a gradient that catches light
+ * at the poles reads as a curved surface.
+ *
+ * The mask is the standard xor trick: paint the padding box and the border
+ * box, then exclude the overlap, which leaves exactly the padding ring.
+ * -webkit-mask-composite: xor and mask-composite: exclude are the same
+ * operation under two spellings; both are needed for cross-browser coverage.
+ */
+.liquid-glass {
+  background: rgba(255, 255, 255, 0.01);
+  background-blend-mode: luminosity;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: none;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.liquid-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.4px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.45) 0%,
+    rgba(255, 255, 255, 0.15) 20%,
+    rgba(255, 255, 255, 0) 40%,
+    rgba(255, 255, 255, 0) 60%,
+    rgba(255, 255, 255, 0.15) 80%,
+    rgba(255, 255, 255, 0.45) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/**
+ * The footage is full-colour and the design is not.
+ *
+ * Dropping the saturation is what lets supplied video sit inside a strictly
+ * monochrome page instead of becoming the only colour on it — and it is a
+ * one-line revert (delete the filter) if the colour is ever wanted back. The
+ * slight contrast lift compensates for the flattening that desaturation
+ * always causes.
+ */
+.monochrome-media {
+  filter: grayscale(1) contrast(1.08) brightness(0.92);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
