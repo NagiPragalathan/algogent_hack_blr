@@ -46,6 +46,8 @@ export interface RegisterInput {
   body?: string;
   email?: string;
   displayName?: string;
+  /** Base64-encoded SKILL.md content, when the agent was created from an uploaded skill file. */
+  skillMd?: string;
 }
 
 export interface Receipt {

@@ -4,6 +4,7 @@ import { BrandMark } from "@/components/brand-mark";
 
 const LINKS = [
   { label: "Agents", to: "/agents" },
+  { label: "Developer Portal", to: "/developer" },
   { label: "How It Works", to: "/#how-it-works" },
   { label: "Pricing", to: "/#pricing" },
   { label: "Publish an agent", to: "/publish" },

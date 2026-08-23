@@ -5,6 +5,7 @@ import { ScrollManager } from "@/components/scroll-manager";
 import { Home } from "@/pages/home";
 import { AgentsPage } from "@/pages/agents";
 import { PublishPage } from "@/pages/publish";
+import { DeveloperPage } from "@/pages/developer";
 
 /**
  * The shell: chrome that is on every route, and the routes themselves.
@@ -26,6 +27,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/agents" element={<AgentsPage />} />
+          <Route path="/developer" element={<DeveloperPage />} />
           <Route path="/publish" element={<PublishPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
