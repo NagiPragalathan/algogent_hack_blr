@@ -67,6 +67,9 @@ src/background/          the service worker and everything behind it
 
 tests/
   direct/notrack.test.mjs  the engine driven on a faked stream: node tests/direct/notrack.test.mjs
+  agent/run-slot.test.mjs  the one-run-at-a-time slot, and Stop unwinding
+  agent/survey-turn.test.mjs  the plan and the first action in one round trip
+  panel/*.html           self-checking browser fixtures — see the end of this file
 
 src/content/             classic content scripts (NOT ES modules — see below)
   page-context.js        text extraction and the element picker
@@ -1346,6 +1349,48 @@ icons. This one runs **before the first decision** as well as inside
 that *starts* on a dashboard, and `renderObservation` says out loud what the
 silence means so the model knows the page is not empty, only unreadable.
 
+**The survey and the first action are ONE turn, not two.** The route used to
+cost a provider round trip of its own that was forbidden from carrying an
+action — the prompt said "Reply with the plan and NOTHING ELSE", and anything
+JSON-shaped arriving there was discarded. That is ten to forty seconds in front
+of every planned run, spent producing prose, while the model already had the
+page, the stitched picture and the task in front of it. Measured on the run
+that prompted this: 29s of `Working out a plan` before the first click of a
+seven-step task, with a second full round trip after it to get that click.
+
+Nothing justified the split. The observation the survey reads IS the
+observation the first acting turn reads — same page, same numbered ids, and
+nothing happens in between for a second trip to discover. So `SURVEY_FORMAT` in
+`plan.js` asks for the route, then the first batch, then the notes, and
+`closing(task, plan, { survey })` swaps its usual "ONE fenced block and nothing
+else" demand for it. Measured on the same three units of work: **4 round trips
+→ 3** (`tests/agent/survey-turn.test.mjs`).
+
+Five things hold it up. The ORDER inside the reply is the same reasoning that
+already put `## Notes` last — a truncated reply loses its tail, so the route
+goes first because it shapes the actions, the block second because it is the
+half the run cannot continue without, and the notes last because nobody is
+blocked on them. `closing` must swap the demand rather than append to it: a
+model obeying the last thing it read writes the block alone, the route is lost,
+and every later turn runs planless — the old failure, one layer along.
+`harvestPlan` runs BEFORE `parseAction`, so a reply that surveyed properly and
+fumbled its JSON keeps its route and gets the ordinary format correction
+instead of being asked to survey again. `surveying` is cleared by ANY reply for
+the same reason. And `planFrom` refuses a reply with no headings at all: that
+is a bare action, and storing its one-line `thought` as YOUR PLAN would replay
+one turn's throwaway reasoning forty times as the route the model supposedly
+checked against a picture of the whole page.
+
+`routeOnly` is the other half of the same saving. `closing()` repeats YOUR PLAN
+every turn — deliberately, for the reason below — but the notes underneath it
+are up to twenty lines of site trivia gathered on that turn only because the
+page happened to be in front of the model, and they exist for the bubbles the
+PAGE shows during the waits. Repeating them into forty prompts is ballast in
+front of the two lines that matter. `notesFrom` still reads the full reply, so
+the two halves simply go to the two places that want them.
+
+Everything below still holds, and is why the survey is worth taking at all:
+
 **A run surveys the whole page and writes a route before it touches anything.**
 Without it a run is forty independent decisions, each made from one screenful
 and none aware of the others — which is what makes an agent feel slow even when
@@ -2350,7 +2395,12 @@ There is no test runner. What exists, and works:
   `chrome.*` and assert the listeners register. Walks every background module.
 - **The agent loop:** `runAgent()` takes `ask`, `emit`, `confirm` and `signal` as
   arguments precisely so it can be driven from a test with a fake `chrome.tabs`.
-  Scripted replies in, emitted events out.
+  Scripted replies in, emitted events out. `tests/agent/survey-turn.test.mjs`
+  does exactly that for the merged survey turn — and note what makes a
+  round-trip count meaningful: the fake model READS its prompt and does the same
+  three units of work either way, so the number that differs is how many times
+  the provider had to be reached. A positional script of replies compares
+  nothing, because the old code simply did less work per trip.
 - **The content scripts, for real:** they are classic scripts with no imports,
   so a plain HTML fixture can `<script src>` both of them after stubbing
   `chrome.runtime.onMessage.addListener` — then call `observe()` through the

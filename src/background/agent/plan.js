@@ -1,5 +1,3 @@
-import { renderObservation } from './protocol.js';
-
 /**
  * The survey turn: look at the whole page once, decide the route, then act.
  *
@@ -70,17 +68,96 @@ export function worthPlanning(task) {
 }
 
 /**
- * Survey the page and come back with a route.
+ * The survey is not a turn of its own any more.
  *
- * Returns the plan as text, or null — a run without a plan is the old
- * behaviour, which works, so nothing here is allowed to end a run. `ask` is the
- * loop's own provider call, so the plan lands in the same conversation as the
- * decisions that follow it and the model can refer back to its own reasoning
- * rather than being re-told it every turn.
+ * It used to be: one provider round trip that produced a route and NOTHING
+ * ELSE — the prompt said so outright, and an action arriving there was
+ * discarded. That bought the route at the price of a whole round trip in front
+ * of every run, and it was the most visible wait in the extension: a still
+ * panel reading "Working out a plan" for ten to forty seconds while the model
+ * sat with the page, the picture and the task already in front of it, forbidden
+ * from doing anything with them. Measured on the run that prompted this: 29s of
+ * survey before the first click of a seven-step task.
+ *
+ * The observation the survey reads IS the observation the first acting turn
+ * would read, and nothing happens in between — same page, same numbered ids, no
+ * state for a second trip to discover. So asking for the route and the first
+ * batch in one reply costs nothing and saves a round trip on every planned run.
+ * The model still plans before it acts; it is simply no longer asked twice.
+ *
+ * The order inside the reply is load-bearing, and it is the same reasoning that
+ * already put `## Notes` last: a reply that gets cut off loses its tail. The
+ * route comes first because it shapes the actions, the action block second
+ * because it is the half the run cannot continue without, and the notes last
+ * because nobody is blocked on them.
  */
-export async function makePlan({ ask, task, observation, image, whole, emit, step = 0, signal }) {
-  if (signal?.cancelled) return null;
+export const SURVEY_FORMAT = [
+  'THIS IS YOUR FIRST TURN ON THIS PAGE, so it has three parts, in this order.',
+  '',
+  /**
+   * Markdown, and never an indented line.
+   *
+   * The route is rendered as a document in the panel, and four leading spaces
+   * is a code block in every markdown parser there is — so a route written with
+   * hanging indents came out as one grey card per line, inside a column narrow
+   * enough to wrap them a word at a time. It read as a rendering bug rather than
+   * as a model following the format it was given.
+   */
+  'FIRST the route, as flat GitHub-flavoured markdown. Never indent a line — a',
+  'leading four spaces renders as code. Terse notes, no preamble, no restating',
+  'the task: about six lines in total.',
+  '',
+  '## Route',
+  '1. One line each, naming the real buttons and fields by their labels. Group',
+  'what can be sent in one turn — six fields is ONE step. Mark a step **alone**',
+  'if it replaces the page (a submit, a navigation, opening a dialog, or a field',
+  'that answers with a list).',
+  '',
+  '## Done when',
+  'The specific thing on screen that means stop.',
+  '',
+  '## Missing',
+  'Anything the task does not supply that the page will demand, or "nothing".',
+  '',
+  /**
+   * The half that makes this one turn rather than two.
+   *
+   * Said as plainly as it can be said, because the model has just been asked for
+   * a document and the pull is to stop there and wait to be thanked — which is
+   * precisely the "answered instead of acting" shape the loop already keeps a
+   * push-back for. Saying it here costs nothing; correcting it afterwards costs
+   * the round trip this change exists to remove.
+   */
+  'SECOND, one fenced JSON block with the actions to carry out NOW: step 1 of',
+  'the route you have just written, batched exactly as you grouped it. This is a',
+  'real turn and what you put in the block happens, so the route is not the',
+  'reply — the block is. Do not stop after the route, and do not wait to be told',
+  'to begin. If the task is already done, that is',
+  '{"action":"finish","answer":"the answer"}.',
+  '',
+  'THIRD, after the block:',
+  '',
+  '## Notes',
+  'Up to 20 one-line notes about THIS site — what it is, what it is for, what is',
+  'on this page, anything a person using it would find worth knowing. One short',
+  'sentence each, as a bullet list, no numbering. These are shown to the user',
+  'while they wait, so make them genuinely interesting rather than a description',
+  'of the layout. Write them LAST: a reply cut off mid-render should lose these',
+  'rather than the actions above them.',
+  '',
+  'A route of "go to the form, fill it in, submit" is worth nothing next turn.',
+  'Names, or it is not a plan.'
+].join('\n');
 
+/**
+ * Say a survey is happening, before the turn that carries it.
+ *
+ * Emitted ahead of the ask rather than after it, because this is the longest
+ * wait in the run and the panel would otherwise show nothing at all for it. The
+ * route itself arrives with the reply and lands as `emitPlan` under the same
+ * step number, so the two read as one entry in the timeline.
+ */
+export function announceSurvey(emit, { step = 0, image = false } = {}) {
   emit({
     type: 'AGENT_STEP',
     // Usually 0 — the survey is the first thing a run does. A run that started
@@ -91,114 +168,78 @@ export async function makePlan({ ask, task, observation, image, whole, emit, ste
     kind: 'plan',
     description: 'Working out a plan',
     note: image
-      ? 'Looking at the whole page first, then deciding the route before touching anything.'
-      : 'Reading the whole page first, then deciding the route before touching anything.'
+      ? 'Looking at the whole page first, then acting on the route it decides — both in one turn.'
+      : 'Reading the whole page first, then acting on the route it decides — both in one turn.'
   });
+}
 
-  const reply = await ask(
-    [
-      'You are about to drive a real browser to carry out the task below. Before',
-      'you touch anything, look at the whole page and work out how you will do it.',
-      '',
-      // Said differently for the two pictures, because they are not the same
-      // evidence: a stitched whole-page shot can be trusted for "what else is
-      // on this page", a viewport one absolutely cannot, and a model told the
-      // wrong thing plans around a fold it thinks it has already seen past.
-      whole
-        ? 'A screenshot of the ENTIRE page is attached — every screenful stitched' +
-          ' together, so it shows what is below the fold too. Read it alongside' +
-          ' the text below.'
-        : image
-          ? 'A screenshot of the VISIBLE part of the page is attached. There may be' +
-            ' more below the fold that it does not show — plan for finding out.'
-          : 'The page as text is below.',
-      '',
-      `TASK: ${task}`,
-      '',
-      renderObservation(0, observation, { image: Boolean(image) }),
-      '',
-      'Reply with the plan and NOTHING ELSE. No JSON, no actions — nothing is',
-      'being carried out yet, and an action here is discarded.',
-      '',
-      /**
-       * Length is latency here, not verbosity.
-       *
-       * Nothing in the run happens until this reply has finished generating,
-       * and the user is watching a still panel for every second of it. Twelve
-       * lines of prose was thirty seconds of that, for a route the next turn
-       * reads in three. Terse notes carry the same information and generate in
-       * a fraction of the time.
-       */
-      /**
-       * Markdown, and never an indented line.
-       *
-       * The plan is rendered as a document in the panel, and four leading
-       * spaces is a code block in every markdown parser there is — so a route
-       * written with hanging indents came out as one grey code card per line,
-       * inside a column narrow enough to wrap them a word at a time. It was
-       * unreadable, and it read as a rendering bug rather than as a model
-       * following the format it was given. Ask for flat markdown and the same
-       * renderer that draws an ordinary answer draws this properly.
-       */
-      'Format: GitHub-flavoured markdown, exactly the three sections below, in',
-      'this order. Never indent a line — a leading four spaces renders as code.',
-      'Terse notes, no prose, no preamble, no restating the task. Nothing runs',
-      'until you finish writing this and the user is watching a still panel',
-      'meanwhile, so length is delay: about six lines in total.',
-      '',
-      '## Route',
-      '1. One line each, naming the real buttons and fields by their labels.',
-      'Group what can be sent in one turn — six fields is ONE step. Mark a step',
-      '**alone** if it replaces the page (submit, navigation, opening a dialog,',
-      'or a field that answers with a list).',
-      '',
-      '## Done when',
-      'The specific thing on screen that means stop.',
-      '',
-      '## Missing',
-      'Anything the task does not supply that the page will demand, or "nothing".',
-      '',
-      /**
-       * Twenty short facts, gathered here because here is where the page is
-       * already in front of the model.
-       *
-       * They are shown on the page during the waits — and the waits are most of
-       * a run. Asking for them in their own turn would cost another full round
-       * trip for something nobody is blocked on; asking for them here costs a
-       * few hundred tokens on a turn that was happening anyway. They are last
-       * in the reply on purpose: the route is what the next turn needs, and a
-       * reply truncated mid-render should lose the notes rather than the plan.
-       */
-      '## Notes',
-      'Then up to 20 one-line notes about THIS site — what it is, what it is for,',
-      'what is on this page, anything a person using it would find worth knowing.',
-      'One short sentence each, as a bullet list, no numbering. These are shown to',
-      'the user while they wait, so make them genuinely interesting rather than a',
-      'description of the layout. Write them last.',
-      '',
-      'A route of "go to the form, fill it in, submit" is worth nothing next',
-      'turn. Names, or it is not a plan.'
-    ].join('\n'),
-    image
-  );
+/**
+ * The route, out of a reply that also carried the actions.
+ *
+ * Only the fenced blocks come out. Everything else the model wrote is the
+ * document — including `## Notes`, which `notesFrom` reads back off this same
+ * string, and including prose around the sections, because a model that ignored
+ * the headings still wrote something worth carrying into later turns.
+ *
+ * Fences are stripped rather than the text being cut at the first one: the notes
+ * come AFTER the action block, so keeping only what precedes it would throw them
+ * away every single time.
+ */
+export function planFrom(text) {
+  const plan = String(text || '')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/~~~[\s\S]*?~~~/g, '')
+    // An unterminated fence: the reply was cut off inside the block, and what
+    // follows it is not prose either.
+    .replace(/```[\s\S]*$/, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 
-  if (signal?.cancelled) return null;
+  /**
+   * A reply with no headings at all is a bare action, not a plan.
+   *
+   * Keeping its `thought` as "YOUR PLAN" and repeating it every turn for the
+   * rest of the run is worse than having no plan: one turn's throwaway
+   * reasoning, handed back forty times as the route the model supposedly
+   * checked against a picture of the whole page.
+   */
+  return /^#{1,4}\s/m.test(plan) ? plan : '';
+}
 
-  const text = (reply?.text || '').trim();
-  if (reply?.error || !text) return null;
+/**
+ * The plan minus its notes, which is what every later turn is handed.
+ *
+ * `closing()` repeats YOUR PLAN on every turn — deliberately, because a plan
+ * agreed on turn one is a long way up the thread by turn twenty and a plan
+ * the model can no longer see is one it has stopped following. The notes are
+ * not part of that: they are up to twenty lines of site trivia gathered on
+ * the same turn because the page was already in front of the model, and they
+ * exist for the bubbles the PAGE shows while the user waits. Repeating them
+ * into forty prompts is twenty lines of ballast per turn in front of the two
+ * that matter, and it makes the route harder to find in its own block.
+ *
+ * `notesFrom` still reads the full text, so nothing is lost — the two halves
+ * simply go to the two places that want them.
+ */
+export function routeOnly(plan) {
+  const text = String(plan || '');
+  const at = text.search(/^#{1,4}\s*notes\b/im);
+  return (at === -1 ? text : text.slice(0, at)).trim();
+}
 
+/** Show the route in the timeline, once it has actually arrived. */
+export function emitPlan(emit, { step = 0, plan }) {
+  if (!plan) return;
   emit({
     type: 'AGENT_STEP',
-    // Same step as the 'Working out a plan' above it — the two are one entry in
-    // the timeline, so they must sort together whether the survey happened at
-    // the start of the run or on the page it navigated to.
+    // The same step as 'Working out a plan' above it — the two are one entry, so
+    // they must sort together whether the survey happened at the start of the
+    // run or on the page it navigated to.
     step,
     kind: 'plan',
     description: 'Plan ready',
-    note: text
+    note: plan
   });
-
-  return text;
 }
 
 /**

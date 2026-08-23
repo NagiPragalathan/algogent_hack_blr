@@ -794,7 +794,17 @@ function tabBlock(tabs, currentTab) {
   ];
 }
 
-export function closing(task, plan = '', { tabs = null, currentTab = null, mayAsk = true } = {}) {
+/**
+ * `survey` is the format spec for a first turn that plans AND acts.
+ *
+ * Passed in as text rather than imported, because `plan.js` owns the wording
+ * and importing it here would close a ring — plan.js already reaches into
+ * this file. When it is present the closing demand changes shape: the reply
+ * is a document with an action block inside it rather than an action block
+ * and nothing else, and the two instructions cannot both be at the end of the
+ * message. See SURVEY_FORMAT for why the halves are ordered as they are.
+ */
+export function closing(task, plan = '', { tabs = null, currentTab = null, mayAsk = true, survey = '' } = {}) {
   return [
     '',
     '',
@@ -857,10 +867,24 @@ export function closing(task, plan = '', { tabs = null, currentTab = null, mayAs
     'so it is worth being blunt — if you have not opened anything yet, the next',
     'action is a search or a navigation, never prose.',
     '',
-    'Reply with ONE fenced ```json block containing an "action", and nothing',
-    'else. Not a summary, not a question, not an offer to help — those end the',
-    'turn without doing anything. If the task is done, that is',
-    '{"action":"finish","answer":"…"}.'
+    /**
+     * Two shapes, and the survey one has to win when it is set.
+     *
+     * "Reply with ONE fenced block and NOTHING else" is exactly right for
+     * every ordinary turn and exactly wrong for the first one, which is now
+     * asked for a route as well. Leaving both in produced the failure this
+     * whole merge was meant to remove, one layer along: a model that obeys
+     * the last thing it read writes the block alone, the route is lost, and
+     * every later turn runs without a plan.
+     */
+    ...(survey
+      ? [survey]
+      : [
+          'Reply with ONE fenced ```json block containing an "action", and nothing',
+          'else. Not a summary, not a question, not an offer to help — those end the',
+          'turn without doing anything. If the task is done, that is',
+          '{"action":"finish","answer":"…"}.'
+        ])
   ].join('\n');
 }
 

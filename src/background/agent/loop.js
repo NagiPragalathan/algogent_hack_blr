@@ -21,7 +21,15 @@ import {
   followFocus,
   isControlled
 } from './page.js';
-import { makePlan, worthPlanning, notesFrom } from './plan.js';
+import {
+  SURVEY_FORMAT,
+  announceSurvey,
+  emitPlan,
+  notesFrom,
+  planFrom,
+  routeOnly,
+  worthPlanning
+} from './plan.js';
 import { performAction } from './actions.js';
 import { readInParts, needsPartReading } from './read.js';
 
@@ -428,18 +436,51 @@ export async function runAgent({
    */
   const mayAsk = mayAskUser(policy, task);
 
-  const tail = () => closing(task, plan, { tabs: workingTabs, currentTab, mayAsk });
+  /**
+   * True while a survey has been asked for and its reply has not come back.
+   *
+   * Read live by `tail()`, exactly like `plan` and `currentTab`, because the
+   * survey no longer has a turn of its own: the format spec rides on the next
+   * ordinary message and comes off again the moment any reply arrives. Any
+   * reply — not just one that parsed. A model that wrote the route and
+   * fumbled the block gets the format correction, and re-asking for a route
+   * it has already written would spend the correction on the wrong half.
+   */
+  let surveying = false;
+
+  const tail = () =>
+    closing(task, plan, {
+      tabs: workingTabs,
+      currentTab,
+      mayAsk,
+      survey: surveying ? SURVEY_FORMAT : ''
+    });
 
   /**
-   * Survey one page and keep the route. Runs at most once per run.
+   * Is the attached picture the stitched whole page, or just the viewport?
    *
-   * Extracted rather than left inline because it now has two call sites that
-   * must not drift apart: here, for a run that starts on a real page, and the
+   * They are not the same evidence and the difference decides the plan: a
+   * stitched shot can be trusted for "what else is on this page", a viewport
+   * one absolutely cannot, and a model told the wrong one plans around a fold
+   * it believes it has already seen past.
+   */
+  let surveyWhole = false;
+
+  /**
+   * Arm the survey on the next message. Runs at most once per run.
+   *
+   * It takes the picture and raises the flag; it does NOT ask anything. The
+   * route used to cost a provider round trip of its own that was forbidden
+   * from carrying an action — see SURVEY_FORMAT in plan.js for why that is now
+   * folded into the turn that acts on it.
+   *
+   * Extracted rather than left inline because it has two call sites that must
+   * not drift apart: here, for a run that starts on a real page, and the
    * deferred one below for a run that started on the placeholder. Two copies
    * of a block that decides whether to spend a stitched capture is exactly the
    * kind of pair that gets fixed on one side only.
    */
-  const survey = async (observation, step) => {
+  const survey = async (observation, at) => {
     /**
      * The survey picture is the expensive half, so it is earned rather than
      * assumed.
@@ -465,22 +506,39 @@ export async function runAgent({
         }).catch(() => null)
       : null;
 
-    plan =
-      (await makePlan({
-        ask,
-        task,
-        observation,
-        // The page text goes with the picture, because half of what a plan
-        // needs is a label the model has to name exactly, and small type does
-        // not survive a stitched JPEG being downscaled by the provider.
-        image: full?.dataUrl || pendingImage || null,
-        whole: Boolean(full?.dataUrl),
-        emit,
-        step,
-        signal
-      })) || '';
-
     if (signal.cancelled) return;
+
+    /**
+     * The picture rides on the turn as an ordinary attachment.
+     *
+     * There is one slot, and a stitched whole-page shot is strictly better
+     * evidence than a viewport one for the question a survey asks — so it wins
+     * when both exist, and `surveyWhole` is what makes the message say which
+     * of the two arrived. Told the wrong one, a model plans around a fold it
+     * believes it has already seen past.
+     */
+    if (full?.dataUrl) {
+      pendingImage = full.dataUrl;
+      surveyWhole = true;
+    }
+
+    surveying = true;
+    announceSurvey(emit, { step: at, image: Boolean(pendingImage) });
+  };
+
+  /** Harvest the route out of the reply that also carried the first actions. */
+  const harvestPlan = (text, at) => {
+    surveying = false;
+    surveyWhole = false;
+
+    const found = planFrom(text);
+    if (!found) return;
+
+    // The route is what every later turn is handed; the notes below it are
+    // for the page, and repeating twenty lines of them into forty prompts
+    // buries the two lines that actually matter. See `routeOnly`.
+    plan = routeOnly(found);
+    emitPlan(emit, { step: at, plan: found });
 
     /**
      * Hand the page something to say while it waits.
@@ -490,7 +548,9 @@ export async function runAgent({
      * notes, and a page that cannot be reached simply does not get them —
      * nothing here is allowed to cost the run a step.
      */
-    const notes = notesFrom(plan);
+    // Off the FULL reply, not off `plan` — the notes were just cut out of
+    // that, and reading them back from it would find nothing.
+    const notes = notesFrom(found);
     if (notes.length) {
       sendToPage(currentTab, { type: 'AGENT_NOTES', notes }, currentFrame).catch(() => {});
     }
@@ -527,10 +587,26 @@ export async function runAgent({
   let message =
     systemPrompt(task) +
     '\n\n' +
-    (pendingImage
-      ? `WARNING: ${opaqueStart}, so a screenshot is attached. What this page ` +
-        'holds is in the picture, not in the text below.\n\n'
-      : '') +
+    /**
+     * Two different pictures can be on this turn and they mean different
+     * things, so only one line may be printed.
+     *
+     * `surveyWhole` is the stitched survey shot, which is evidence about the
+     * whole page. `opaqueStart` is the viewport shot taken because the DOM
+     * could not describe the page, which is evidence about this screenful
+     * and says the text below is not to be trusted. Printing both — or
+     * printing the opaque warning over a survey capture that has replaced
+     * that image — tells the model the wrong thing about what it is looking
+     * at, which is the failure the survey exists to prevent.
+     */
+    (surveyWhole
+      ? 'A screenshot of the ENTIRE page is attached — every screenful ' +
+        'stitched together, so it shows what is below the fold too. Read it ' +
+        'alongside the text below.\n\n'
+      : pendingImage
+        ? `WARNING: ${opaqueStart}, so a screenshot is attached. What this page ` +
+          'holds is in the picture, not in the text below.\n\n'
+        : '') +
     claimUpload() +
     renderObservation(0, first.observation, { image: Boolean(pendingImage) }) +
     tail();
@@ -550,10 +626,24 @@ export async function runAgent({
     if (signal.cancelled) return;
 
     const sentImage = Boolean(pendingImage);
+    const planningThisTurn = surveying;
+    const planStep = step;
     const reply = await ask(message, pendingImage || uploadThisTurn);
     pendingImage = null;
     uploadThisTurn = null;
     if (signal.cancelled) return;
+
+    /**
+     * The route comes out before anything is decided about the actions.
+     *
+     * Before the parse, deliberately: a reply that carried a good route and a
+     * malformed block still surveyed the page, and throwing the route away
+     * because the JSON was wrong would make the run pay for the survey twice
+     * — once in the turn that produced it and again in every later turn that
+     * has to re-derive what it said. `harvestPlan` clears `surveying` either
+     * way, so the correction that follows asks for the block alone.
+     */
+    if (planningThisTurn && !reply.error) harvestPlan(reply.text, planStep);
 
     /**
      * The picture did not arrive, and the model has just been told it did.
@@ -1103,6 +1193,8 @@ export async function runAgent({
        */
       if (surveyPending && leftStartPage(next.observation.url)) {
         surveyPending = false;
+        // Sets `surveying` and may take the picture; the route is asked for on
+        // the message built below rather than in a turn of its own.
         await survey(next.observation, step);
         if (signal.cancelled) return;
       }
@@ -1162,6 +1254,14 @@ export async function runAgent({
           '\n\n'
         : '') +
       claimUpload() +
+      // The deferred survey takes its picture here, and it is the stitched
+      // whole page rather than the viewport — same reason as the first
+      // message: a model told the wrong one plans around a fold it thinks it
+      // has already seen past.
+      (surveyWhole
+        ? 'A screenshot of the ENTIRE page is attached — every screenful ' +
+          'stitched together, so it shows what is below the fold too.\n\n'
+        : '') +
       (next?.ok
         ? renderObservation(step, next.observation, { image: Boolean(pendingImage) })
         : `OBSERVATION FAILED: ${next?.error || 'unknown'}`) +
