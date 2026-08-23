@@ -23,6 +23,7 @@
  * prices that fee is the whole ticket.
  */
 import algosdk from 'algosdk';
+import { safeSessionId } from './http.js';
 import { algodFor } from './algorand.js';
 import { splitFee } from './split.js';
 
@@ -99,6 +100,9 @@ export function planGroups(items, companyBps) {
  * between a receipt and a bank statement.
  */
 export async function buildRunGroups({ network, buyer, groups, companyAddress, sessionId }) {
+  // The last point before the chain. The endpoint checks this too; both do,
+  // because either one can be reached without the other.
+  const session = safeSessionId(sessionId);
   const algod = algodFor(network);
   const params = await algod.getTransactionParams().do();
 
@@ -115,7 +119,7 @@ export async function buildRunGroups({ network, buyer, groups, companyAddress, s
           agent: leg.agentId,
           label: leg.label,
           step: leg.step ?? null,
-          session: sessionId || null
+          session
         }),
         suggestedParams: params
       });
@@ -136,7 +140,7 @@ export async function buildRunGroups({ network, buyer, groups, companyAddress, s
         sender: buyer,
         receiver: companyAddress,
         amount: group.companyTotal,
-        note: noteFor({ role: 'marketplace', session: sessionId || null }),
+        note: noteFor({ role: 'marketplace', session }),
         suggestedParams: params
       });
       txns.push(txn);

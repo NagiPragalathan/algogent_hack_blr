@@ -319,7 +319,18 @@ export function finishIfIdle(turnId) {
    * Not awaited, for the reason written across this whole layer: a payment
    * may never hold up an answer, and the answer is already rendered.
    */
-  void settleRun(turnId, sessionOf(turnId) ?? state.session?.id ?? null);
+  /**
+   * `.id`, and the missing `.id` wrote the whole conversation to a chain.
+   *
+   * `sessionOf` returns the session OBJECT — its own comment says so, because
+   * callers mutate what it returns. Passed here as `sessionId` it was
+   * serialised into the on-chain note, so the wallet asked the user to approve
+   * a payment whose note carried their question, the provider's answer and the
+   * conversation URL. Permanent, public, and nothing in the panel would ever
+   * have shown it — the only reason it was caught is that Lute prints the note
+   * it is about to sign.
+   */
+  void settleRun(turnId, sessionOf(turnId)?.id ?? state.session?.id ?? null);
 
   forgetRequest(turnId);
   turn.providerIds.forEach((id) => setProviderBusy(id, false));

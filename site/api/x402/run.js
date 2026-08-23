@@ -15,7 +15,7 @@
  * A client can therefore send back anything it likes and the worst it achieves
  * is a refusal.
  */
-import { handler, body, fail, json, ALGORAND_ADDRESS } from '../_lib/http.js';
+import { handler, body, fail, json, ALGORAND_ADDRESS, safeSessionId } from '../_lib/http.js';
 import { sql, feeConfig, activeNetwork } from '../_lib/db.js';
 import { toAlgoString } from '../_lib/split.js';
 import { planGroups, buildRunGroups } from '../_lib/run-group.js';
@@ -73,6 +73,7 @@ export default handler('POST', async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const settling = url.searchParams.get('settle') === '1';
   const input = body(req);
+  const sessionId = safeSessionId(input.sessionId);
 
   const buyer = String(input.buyer || '').trim();
   if (!ALGORAND_ADDRESS.test(buyer)) {
@@ -99,7 +100,7 @@ export default handler('POST', async (req, res) => {
     buyer,
     groups: plan,
     companyAddress: company.address,
-    sessionId: input.sessionId
+    sessionId
   });
 
   const total = plan.reduce((n, g) => n + g.total, 0);
@@ -149,7 +150,7 @@ export default handler('POST', async (req, res) => {
           scheme: 'exact',
           network: `algorand-${network}`,
           maxAmountRequired: String(total),
-          resource: `run:${input.sessionId || 'anonymous'}`,
+          resource: `run:${sessionId || 'anonymous'}`,
           description: `${priced.length} agent actions`,
           mimeType: 'application/json',
           payTo: priced[0].payoutAddress,
@@ -258,7 +259,7 @@ export default handler('POST', async (req, res) => {
         ${group.total}, ${group.developerTotal}, ${group.companyTotal}, ${company.bps},
         ${group.transactions.length * 1000}, ${group.groupId}, ${actions[0].txid},
         ${companyLeg?.txid || null}, ${confirmation.confirmedRound}, ${network},
-        ${`${actions.length} agent actions`}, ${input.sessionId || null}
+        ${`${actions.length} agent actions`}, ${sessionId || null}
       )
       ON CONFLICT (developer_txid) DO NOTHING
       RETURNING id`;

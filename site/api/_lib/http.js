@@ -84,6 +84,31 @@ export const ALGORAND_ADDRESS = /^[A-Z2-7]{58}$/;
  * request, never quietly send the company's 20% to an empty string or, worse,
  * fold it into the developer's share without anyone noticing.
  */
+/**
+ * A session id, or nothing. NEVER whatever the caller happened to pass.
+ *
+ * Here rather than at one call site because it guards a class of bug, and
+ * the class of bug happened: the panel passed the session OBJECT where its
+ * id belonged — one missing `.id` — and it was serialised into an on-chain
+ * note. The wallet then asked the user to approve a payment whose note
+ * carried their question, the model's answer and the conversation URL. A
+ * note goes to a public ledger and cannot be unwritten.
+ *
+ * Anything bound for a chain has to be bounded by the code that builds the
+ * transaction. That is the last point where it can still be stopped, and the
+ * client is not ours to trust in any case.
+ *
+ * Dropped rather than truncated: a truncated object is still the user's
+ * data, only less of it.
+ */
+const SESSION_ID = /^[A-Za-z0-9._:-]{1,64}$/;
+
+export function safeSessionId(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return SESSION_ID.test(trimmed) ? trimmed : null;
+}
+
 export function required(name) {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is not configured`);

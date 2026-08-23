@@ -21,6 +21,7 @@
  * is submitted.
  */
 import algosdk from 'algosdk';
+import { safeSessionId } from './http.js';
 import { required } from './http.js';
 
 /**
@@ -76,7 +77,7 @@ export async function buildPaymentGroup({
   // Leads with the protocol so an explorer shows what this is. Same shape as
   // the run path's `noteFor` — see the note there for why the prefix matters.
   const note = new TextEncoder().encode(
-    `x402/1 ${JSON.stringify({ agent: agentId, session: sessionId || null })}`
+    `x402/1 ${JSON.stringify({ agent: agentId, session: safeSessionId(sessionId) })}`
   );
 
   const legs = [

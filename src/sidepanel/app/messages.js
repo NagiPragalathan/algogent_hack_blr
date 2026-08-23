@@ -564,7 +564,18 @@ function onAgentFinished(msg) {
    * Billed against the session that OWNS the run, not the one on screen — the
    * panel follows tabs, and a run can finish while you are looking elsewhere.
    */
-  void settleRun(msg.runId, sessionOf(msg.runId) ?? state.session?.id ?? null);
+  /**
+   * `.id`, and the missing `.id` wrote the whole conversation to a chain.
+   *
+   * `sessionOf` returns the session OBJECT — its own comment says so, because
+   * callers mutate what it returns. Passed here as `sessionId` it was
+   * serialised into the on-chain note, so the wallet asked the user to approve
+   * a payment whose note carried their question, the provider's answer and the
+   * conversation URL. Permanent, public, and nothing in the panel would ever
+   * have shown it — the only reason it was caught is that Lute prints the note
+   * it is about to sign.
+   */
+  void settleRun(msg.runId, sessionOf(msg.runId)?.id ?? state.session?.id ?? null);
 
   // Dropped BEFORE the composer is re-read, or `syncComposer` still sees this
   // run as live and leaves the Stop button up on a run that has ended.
