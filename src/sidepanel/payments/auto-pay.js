@@ -236,16 +236,30 @@ export async function initAutoPay() {
 
   probe = (async () => {
     try {
-      const stored = await chrome.storage.local.get(ENABLED_KEY);
+      const stored = await chrome.storage.local.get([ENABLED_KEY, SEED_KEY]);
       if (stored && ENABLED_KEY in stored) enabled = stored[ENABLED_KEY] !== false;
+      if (stored?.[SEED_KEY]) seed = String(stored[SEED_KEY]);
     } catch {
-      // Unreadable storage means the default, which is on.
+      // Unreadable storage means the defaults: on, and the site's own account.
     }
 
     try {
-      const res = await fetch(`${apiBase()}/api/x402/client`, {
-        headers: { accept: 'application/json' }
-      });
+      /**
+       * With a phrase saved, ask whose account it is; without one, ask whether
+       * the deploy pays for itself at all. Two questions, one endpoint, and the
+       * answer decides which address the sheet names as the payer — the whole
+       * point being that "my account" and "the marketplace's account" must
+       * never be indistinguishable on screen.
+       */
+      const res = seed
+        ? await fetch(`${apiBase()}/api/x402/client`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ mnemonic: seed })
+          })
+        : await fetch(`${apiBase()}/api/x402/client`, {
+            headers: { accept: 'application/json' }
+          });
 
       if (!res.ok) {
         problem = `the marketplace answered ${res.status}`;
@@ -258,7 +272,14 @@ export async function initAutoPay() {
         return null;
       }
 
-      client = { address: data.address, network: data.network, funded: data.funded };
+      client = {
+        address: data.address,
+        network: data.network,
+        funded: data.funded,
+        /** Whose account: the phrase the user saved, or the site's fallback. */
+        own: Boolean(data.own)
+      };
+      seedAddress = data.own ? data.address : '';
       problem = '';
 
       /**
@@ -354,10 +375,21 @@ async function settle(items, sessionId) {
   let settled;
 
   try {
+    /**
+     * The user's phrase when they have given one, nothing when they have not —
+     * and the server reads the absence as "pay from the site's own account".
+     * That is the fallback, in one field.
+     *
+     * `safeDestination` is re-checked at the moment of sending rather than
+     * trusted from when it was saved: `marketplaceApi` can be changed between
+     * the two, and the check is worth nothing if it only ran once.
+     */
+    const signer = seed && safeDestination() ? seed : undefined;
+
     const res = await fetch(`${apiBase()}/api/x402/run`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ autoSign: true, sessionId, items })
+      body: JSON.stringify({ autoSign: true, sessionId, items, signer })
     });
 
     settled = await res.json().catch(() => null);

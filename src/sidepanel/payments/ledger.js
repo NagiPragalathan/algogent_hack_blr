@@ -93,10 +93,16 @@ export async function recordRunReceipt(sessionId, settled) {
      * — which is the whole point of charging per step: the row in the fee block
      * and the step in the timeline say the same thing.
      */
-    toolLabel:
-      settled.lines?.length === 1
-        ? settled.lines[0].label
-        : `${totals.actions ?? settled.lines?.length ?? 0} agent actions`,
+    toolLabel: (() => {
+      // `lines` includes the marketplace leg, so "exactly one action" is a
+      // question about the ACTION lines — testing the array's length made this
+      // branch unreachable for every receipt that had a company cut, which is
+      // all of them.
+      const actions = (settled.lines || []).filter((l) => l.agentId);
+      if (actions.length === 1) return actions[0].label;
+      const n = totals.actions ?? actions.length ?? 0;
+      return `${n} agent ${n === 1 ? 'action' : 'actions'}`;
+    })(),
     network: settled.network,
     from: settled.from,
     paidAt: new Date().toISOString(),
@@ -156,6 +162,18 @@ export async function receiptsFor(sessionId) {
 }
 
 /**
+ * The action lines in a receipt — the marketplace's cut is NOT one.
+ *
+ * `lines` carries a leg per action AND the marketplace leg, because both are
+ * transactions and both need a row anyone can check. Counting the length of
+ * that array as "how many actions" therefore reports one too many on every
+ * receipt: a run that navigated once said "Fees · 2 actions" over a single
+ * step, which is the block claiming work that did not happen. The company leg
+ * is the one with no `agentId`, which is also how the server writes it.
+ */
+export const actionLines = (receipt) => (receipt?.lines || []).filter((l) => l.agentId);
+
+/**
  * The run's totals, summed from the rows that are actually shown.
  *
  * Summed here rather than asked of the server on purpose: a footer that
@@ -171,8 +189,11 @@ export function totalsOf(receipts) {
 
   return {
     calls: receipts.length,
-    /** Actions billed across the whole conversation, runs included. */
-    actions: receipts.reduce((acc, r) => acc + (r.lines?.length || 1), 0),
+    /**
+     * Actions billed across the whole conversation, runs included — and the
+     * marketplace's cut is not one of them. See `actionLines`.
+     */
+    actions: receipts.reduce((acc, r) => acc + (r.lines ? actionLines(r).length : 1), 0),
     totalMicroAlgo: total,
     // A skill receipt names one developer; a run receipt sums many. Both are
     // read here so a conversation mixing the two still adds up.
@@ -181,6 +202,46 @@ export function totalsOf(receipts) {
     networkFeeMicroAlgo: fee,
     spentMicroAlgo: total + fee
   };
+}
+
+/**
+ * Everyone who was paid in this conversation, and how much in total.
+ *
+ * The per-leg rows answer "what did THIS action cost"; they do not answer
+ * "how much has this address received", which is the question anyone
+ * reconciling against a block explorer is actually asking — an explorer shows
+ * an account's balance, not our list of steps. Twenty legs to two addresses
+ * means twenty rows the reader has to add up by hand to check one number.
+ *
+ * Summed from the same lines the rows are drawn from, for the reason `totalsOf`
+ * is: a summary that disagrees with the list above it is the one bug a receipt
+ * cannot survive.
+ */
+export function payeesOf(receipts) {
+  const by = new Map();
+
+  const add = (address, microAlgo, role, network) => {
+    if (!address || !microAlgo) return;
+    const at = by.get(address) || { address, microAlgo: 0, calls: 0, role, network };
+    at.microAlgo += microAlgo;
+    at.calls += 1;
+    // A developer address that also happens to be the marketplace's stays
+    // labelled by whichever role it filled first; the amount is what matters.
+    by.set(address, at);
+  };
+
+  for (const receipt of receipts) {
+    if (receipt.lines?.length) {
+      for (const line of receipt.lines) {
+        add(line.to, line.microAlgo, line.agentId ? 'developer' : 'marketplace', receipt.network);
+      }
+    } else {
+      add(receipt.developer?.address, receipt.developer?.microAlgo, 'developer', receipt.network);
+      add(receipt.company?.address, receipt.company?.microAlgo, 'marketplace', receipt.network);
+    }
+  }
+
+  return [...by.values()].sort((a, b) => b.microAlgo - a.microAlgo);
 }
 
 /** microALGO → an ALGO string. Integer maths only; never a float. */

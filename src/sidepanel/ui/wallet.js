@@ -19,7 +19,11 @@ import {
   autoPayConfigured,
   autoPayAddress,
   autoPayProblem,
-  setAutoPayEnabled
+  setAutoPayEnabled,
+  userSeedSet,
+  userSeedAddress,
+  setUserSeed,
+  clearUserSeed
 } from '../payments/auto-pay.js';
 
 export const NETWORKS = {
@@ -827,6 +831,15 @@ function autoPayBlock() {
   // The note is left EMPTY here and filled in by `bindAutoPay` as text — it
   // carries the marketplace's own words about why it cannot pay, which is
   // content off the wire and does not belong in an HTML string.
+  const mine = userSeedSet();
+
+  /**
+   * The phrase is NEVER rendered back, not even masked — a masked field
+   * holding a real secret is a secret one paste away from a screen, and there
+   * is nothing the panel could do with it that showing the derived address
+   * does not do better. So the box is always empty and the address above it is
+   * what says whether saving worked.
+   */
   return `
     <div class="wallet-autopay${on ? ' on' : ''}">
       <label class="wallet-autopay-row" for="wallet-autopay-toggle">
@@ -835,6 +848,36 @@ function autoPayBlock() {
         <span class="wallet-autopay-state">${on ? 'On' : 'Off'}</span>
       </label>
       <p class="wallet-autopay-note" data-note></p>
+
+      <div class="wallet-seed">
+        <div class="wallet-seed-head">
+          <span class="wallet-seed-label">Pay from my own account</span>
+          <span class="wallet-seed-state${mine ? ' set' : ''}" data-seed-state></span>
+        </div>
+        <div class="wallet-seed-row">
+          <input
+            type="password"
+            id="wallet-seed-input"
+            class="wallet-seed-input"
+            placeholder="25-word recovery phrase"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+          >
+          <button class="wallet-mini-btn" id="wallet-seed-show" title="Show what you typed">
+            ${icon('eye', 14)}
+          </button>
+        </div>
+        <div class="wallet-seed-actions">
+          <button class="wallet-action-btn" id="wallet-seed-save">${mine ? 'Replace' : 'Save'}</button>
+          ${mine ? '<button class="wallet-action-btn disconnect" id="wallet-seed-clear">Remove</button>' : ''}
+        </div>
+        <p class="wallet-seed-warn">
+          A recovery phrase is total control of that account, with no undo. It is
+          kept in this browser profile and sent to the marketplace over HTTPS to
+          sign each payment. Use a throwaway account.
+        </p>
+      </div>
     </div>
   `;
 }
@@ -870,6 +913,67 @@ function bindAutoPay(root) {
       2500
     );
   });
+
+  /* ── the user's own account ───────────────────────────────────────────── */
+
+  /**
+   * Written as TEXT for the same reason as the note: this line names an address
+   * that came back off the wire.
+   */
+  const stateEl = root.querySelector('[data-seed-state]');
+  if (stateEl) {
+    stateEl.textContent = userSeedSet()
+      ? `paying from ${ellipseAddress(userSeedAddress(), 6, 4)}`
+      : "not set — the marketplace's own account pays";
+  }
+
+  const input = root.querySelector('#wallet-seed-input');
+
+  // A phrase is 25 words and easy to mistype; being able to read back what you
+  // pasted before saving it is the difference between one attempt and four.
+  root.querySelector('#wallet-seed-show')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (input) input.type = input.type === 'password' ? 'text' : 'password';
+  });
+
+  const save = root.querySelector('#wallet-seed-save');
+  save?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!input || save.disabled) return;
+
+    save.disabled = true;
+    const label = save.textContent;
+    save.textContent = 'Checking…';
+
+    const result = await setUserSeed(input.value);
+
+    /**
+     * Cleared on BOTH paths, and immediately. On success it has been saved and
+     * has no business staying on screen; on failure the commonest cause is a
+     * paste that went somewhere it should not, and leaving it in a field that
+     * can be un-masked keeps it there.
+     */
+    input.value = '';
+    save.disabled = false;
+    save.textContent = label;
+
+    if (result.ok) {
+      renderWalletSheet();
+      flashHint(`Paying from ${ellipseAddress(result.address, 6, 4)}.`, 4000);
+      if (result.funded === false) {
+        flashHint(`${ellipseAddress(result.address, 6, 4)} has no funds — payments will fail.`, 8000);
+      }
+    } else {
+      flashHint(`Not saved — ${result.reason}`, 8000);
+    }
+  });
+
+  root.querySelector('#wallet-seed-clear')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await clearUserSeed();
+    renderWalletSheet();
+    flashHint("Removed. The marketplace's own account pays again.", 4000);
+  });
 }
 
 /** The note text for the current state, kept next to the block that draws it. */
@@ -880,8 +984,12 @@ function autoPayNote() {
   if (!on) return 'Nothing the agent does is charged for. No transaction is made.';
 
   if (autoPayConfigured() && isValidAlgorandAddress(address || '')) {
+    // Whose account is the thing to lead with. "It is paying" and "it is paying
+    // from MY account" are different facts, and only one of them is the one
+    // somebody who saved a phrase is checking for.
+    const whose = userSeedSet() ? 'your own account' : "the marketplace's account";
     return (
-      `Each action settles by itself from ${ellipseAddress(address, 6, 4)} — ` +
+      `Each action settles by itself from ${whose}, ${ellipseAddress(address, 6, 4)} — ` +
       'one transaction per step, no signature asked.'
     );
   }

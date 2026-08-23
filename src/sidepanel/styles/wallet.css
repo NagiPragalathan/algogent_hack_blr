@@ -59,6 +59,28 @@
   padding: 8px 12px 14px;
 }
 
+/*
+ * The sheet's body scrolls; the sheet itself does not.
+ *
+ * `.sheet` is a flex column with a max-height, and its other users put a
+ * `.sheet-list` inside it — which is where the `overflow-y` lives. This one
+ * fills the body with a card instead, so nothing scrolled and anything past the
+ * max-height simply drew outside the rounded box, over the composer. It was
+ * latent for as long as the card was short enough; the pay-per-step block is
+ * what pushed it over, and the account actions ended up floating below the
+ * sheet's own border.
+ *
+ * `min-height: 0` is the half that is easy to miss and does all the work: a
+ * flex child refuses to shrink below its content by default, so `overflow-y`
+ * alone leaves the body at full height and the sheet overflowing exactly as
+ * before.
+ */
+#wallet-content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .wallet-sheet-sub {
   font-size: 11px;
   color: var(--fg-dim);
@@ -524,6 +546,98 @@
   color: var(--fg-dim);
   /* An address and a marketplace error both arrive unbroken and long. */
   overflow-wrap: anywhere;
+}
+
+/*
+ * "Pay from my own account" — the phrase box.
+ *
+ * Separated from the switch above it by a rule rather than a gap, because they
+ * are two decisions and not one: whether to charge at all, and whose account is
+ * charged. Someone switching billing off should not have to work out whether
+ * that also removed their account.
+ */
+.wallet-seed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+/*
+ * The state goes on its own line, always.
+ *
+ * Side by side reads better in a mockup and collides in the panel: the label is
+ * three words, the state is an address, and the column is 400px at its widest
+ * and routinely narrower. Wrapping only when it must produces the worst version
+ * — two lines interleaved — so it takes a full row unconditionally.
+ */
+.wallet-seed-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.wallet-seed-label {
+  flex: 1 1 100%;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.wallet-seed-state {
+  flex: 1 1 100%;
+  font-size: 11px;
+  color: var(--fg-dim);
+  overflow-wrap: anywhere;
+}
+
+.wallet-seed-state.set {
+  color: var(--accent);
+}
+
+.wallet-seed-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.wallet-seed-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 5px 8px;
+  outline: none;
+}
+
+.wallet-seed-input:focus {
+  border-color: var(--accent);
+}
+
+.wallet-seed-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/*
+ * The warning is the one line here that must not be skimmed past, so it is the
+ * only dimmed text in this block drawn at full line height with a rule beside
+ * it — quiet enough not to shout on every open, present enough to be read once.
+ */
+.wallet-seed-warn {
+  margin: 2px 0 0;
+  padding-left: 8px;
+  border-left: 2px solid color-mix(in srgb, var(--warn) 55%, transparent);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--fg-dim);
 }
 
 .wallet-actions {

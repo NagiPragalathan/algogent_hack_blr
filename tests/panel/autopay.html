@@ -78,14 +78,22 @@
       globalThis.chrome = {
         storage: {
           local: {
-            get: async (k) => (typeof k === 'string' ? { [k]: store[k] } : { ...store }),
-            set: async (o) => Object.assign(store, o)
+            get: async (k) =>
+              typeof k === 'string'
+                ? { [k]: store[k] }
+                : Array.isArray(k)
+                  ? Object.fromEntries(k.filter((n) => n in store).map((n) => [n, store[n]]))
+                  : { ...store },
+            set: async (o) => Object.assign(store, o),
+            remove: async (k) => { for (const n of [].concat(k)) delete store[n]; }
           }
         }
       };
 
       /** Every settlement the panel posts, so the assertions can count them. */
       const posted = [];
+      /** Every probe, so "it never left the panel" can be asserted. */
+      const probes = [];
       let clientAnswer = {
         autoSign: true,
         address: 'B55UYGCBZP6JI4ABHMQECGBMXESYIUZJBG4ZKLD4BISCUDDROQUKO35KXU',
@@ -100,7 +108,28 @@
       globalThis.fetch = async (url, init) => {
         const href = String(url);
 
-        if (href.includes('/api/x402/client')) return json(clientAnswer);
+        if (href.includes('/api/x402/client')) {
+          probes.push(init?.method || 'GET');
+          if (init?.method === 'POST') {
+            const { mnemonic } = JSON.parse(init.body);
+            // Whatever the real derivation is, the panel cannot do it — so the
+            // server is the only thing that can say which account a phrase is,
+            // and the fixture stands in for exactly that.
+            if (String(mnemonic).split(' ').length !== 25) {
+              return json({ error: 'invalid_mnemonic', message: 'not a valid phrase' }, 400);
+            }
+            return json({
+              autoSign: true,
+              own: true,
+              address: 'OWNACCOUNT7777777777777777777777777777777777777777777777XY',
+              network: 'testnet',
+              funded: true,
+              reason: '',
+              balance: { microAlgo: 5_000_000, algo: '5.000000' }
+            });
+          }
+          return json(clientAnswer);
+        }
 
         if (href.includes('/api/x402/run')) {
           const body = JSON.parse(init.body);
@@ -143,7 +172,8 @@
 
       const settled = () => new Promise((r) => setTimeout(r, 60));
 
-      const { initAutoPay, autoPayEnabled, autoPayReady, setAutoPayEnabled } =
+      const { initAutoPay, autoPayEnabled, autoPayReady, setAutoPayEnabled,
+              setUserSeed, clearUserSeed, userSeedSet } =
         await import('/src/sidepanel/payments/auto-pay.js');
       const { noteAction, noteAnswer, settleRun } =
         await import('/src/sidepanel/payments/run-billing.js');
@@ -273,6 +303,53 @@
       ok('and names who is paying',
          /B55UYG/.test(content.querySelector('.wallet-autopay-note')?.textContent || ''),
          content.querySelector('.wallet-autopay-note')?.textContent);
+
+      note('the seed box: saving one changes who pays');
+      const seedInput = content.querySelector('#wallet-seed-input');
+      ok('there is a box to put a phrase in', Boolean(seedInput));
+      ok('it is masked', seedInput?.type === 'password');
+      ok('it starts empty, always', seedInput?.value === '');
+      ok('and it says whose account pays now',
+         /marketplace/.test(content.querySelector('[data-seed-state]')?.textContent || ''),
+         content.querySelector('[data-seed-state]')?.textContent);
+
+      note('a phrase that is the wrong length never leaves the panel');
+      const beforeProbe = probes.length;
+      const short = await setUserSeed('one two three');
+      ok('refused locally', short.ok === false && /25 words/.test(short.reason), short.reason);
+      ok('and nothing was sent', probes.length === beforeProbe,
+         `${probes.length - beforeProbe} sent`);
+
+      note('a valid one is checked, then used for every later payment');
+      const phrase = Array.from({ length: 25 }, (_, i) => `word${i + 1}`).join(' ');
+      const saved = await setUserSeed(phrase);
+      ok('saved', saved.ok === true, JSON.stringify(saved));
+      ok('and the address is the one the server derived',
+         saved.address === 'OWNACCOUNT7777777777777777777777777777777777777777777777XY');
+      ok('the phrase is in storage, not invented', store.x402UserSeed === phrase);
+
+      posted.length = 0;
+      noteAction('run-own', { kind: 'navigate', description: 'Opened example.com', step: 1 });
+      await settled();
+      ok('the settlement carries the phrase', posted[0]?.signer === phrase);
+
+      renderWalletSheet();
+      ok('and the sheet says it is your account now',
+         /your own account/.test(document.querySelector('.wallet-autopay-note')?.textContent || ''),
+         document.querySelector('.wallet-autopay-note')?.textContent);
+      ok('the box is STILL empty — nothing echoes it back',
+         document.querySelector('#wallet-seed-input')?.value === '');
+      ok('and the whole sheet never contains the phrase',
+         !document.getElementById('wallet-content').innerHTML.includes('word13'));
+
+      note('removing it goes back to the fallback');
+      await clearUserSeed();
+      posted.length = 0;
+      noteAction('run-back', { kind: 'navigate', description: 'Opened example.com', step: 1 });
+      await settled();
+      ok('no phrase is sent any more', posted[0] && !('signer' in posted[0]),
+         JSON.stringify(Object.keys(posted[0] || {})));
+      ok('and it is gone from storage', !store.x402UserSeed);
 
       note('clicking it flips the setting');
       const toggle = content.querySelector('#wallet-autopay-toggle');
