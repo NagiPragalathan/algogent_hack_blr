@@ -215,6 +215,42 @@ async function applyWindowMode(windowId, mode) {
   }
 }
 
+/**
+ * Put a relay window that has drifted back where it belongs.
+ *
+ * The mode is applied when a window is created and after a provider tab is
+ * added to it, and neither of those runs on the common path: a second question
+ * finds the tab already open and returns early. So a relay window that got
+ * restored ONCE stayed on screen for the rest of the session, debugger bar and
+ * all, with nothing that would ever put it away again.
+ *
+ * That used to need a bug to reach — `open_tab` creating a tab in the minimized
+ * relay, which restores it (see state/user-tabs.js) — and it is fixed at source.
+ * It is not the only way in, though: a login reveal that never got used, Chrome
+ * restoring windows on startup, a stray click on the taskbar. One window that is
+ * meant to be invisible and is not is worth a cheap check per ask.
+ *
+ * Cheap because it READS first: `windows.update` on an already-minimized window
+ * is a no-op to the user but not to Chrome, and doing it on every question of
+ * every chat is churn for nothing. A window we cannot read is left alone.
+ */
+async function reassertWindowMode(mode) {
+  if (mode === 'visible' || revealReason === 'manual') return;
+
+  for (const id of relayWindowIds) {
+    const win = await chrome.windows.get(id).catch(() => null);
+    if (!win) continue;
+    // 'offscreen' is a position rather than a state, so a window dragged back
+    // onto the display reads as perfectly normal and has to be tested for.
+    const wrong =
+      mode === 'minimized'
+        ? win.state !== 'minimized'
+        : win.state === 'minimized' || (win.left ?? 0) < 10000;
+
+    if (wrong) await applyWindowMode(id, mode);
+  }
+}
+
 /** Drop ids for windows that no longer exist. */
 async function pruneDeadWindows() {
   for (const id of [...relayWindowIds]) {
@@ -415,6 +451,8 @@ export async function ensureProviderTab(provider, settings, resumeUrl = null) {
       } else if (tab.status !== 'complete') {
         await waitForTabLoad(existing);
       }
+
+      await reassertWindowMode(mode);
       return existing;
     }
 

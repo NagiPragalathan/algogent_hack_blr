@@ -22,7 +22,8 @@ import {
   isRelayOwned,
   isOrdinaryUrl,
   onUserTabChange,
-  describe
+  describe,
+  createUserTab
 } from '../state/user-tabs.js';
 import { panelOpenedOn, panelClosed } from '../state/panel-tabs.js';
 import { capturePages } from '../context/capture.js';
@@ -562,7 +563,11 @@ const HANDLERS = {
       await chrome.windows.update(open.windowId, { focused: true });
       await chrome.tabs.update(open.id, { active: true });
     } else {
-      await chrome.tabs.create({ url, active: true });
+      // Never a bare `tabs.create`: that lands in the last focused window,
+      // which is the relay whenever a question has just been asked through
+      // one — so the thread the user asked to READ would open among the
+      // provider tabs in a window they cannot see.
+      await createUserTab(url, { active: true });
     }
   },
 
@@ -573,7 +578,7 @@ const HANDLERS = {
     if (isEmbedded(settings)) {
       // There is no window to bring forward in embedded mode, so sign in the
       // ordinary way. The session is shared with the frame.
-      await chrome.tabs.create({ url: provider.homeUrl, active: true });
+      await createUserTab(provider.homeUrl, { active: true });
     } else {
       await revealProviderTab(provider, settings);
     }

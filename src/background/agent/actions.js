@@ -10,7 +10,7 @@ import {
   duringAction,
   setWaitingOnUser
 } from './page.js';
-import { listShareableTabs, isUserTabId } from '../state/user-tabs.js';
+import { listShareableTabs, isUserTabId, createUserTab } from '../state/user-tabs.js';
 import { AGENT_BEAT_MS } from './limits.js';
 import { readUrl } from './read-url.js';
 
@@ -476,10 +476,29 @@ async function performBrowserAction({
 
       if (action.action === 'open_tab') {
         report(`Open ${url} in a new tab`);
-        // Inside the action window, so the tab this creates is recognised as
-        // the agent's. Outside it, the group guard would eject the very tab the
-        // run just opened and the follower would decline to move to it.
-        const tab = await duringAction(() => chrome.tabs.create({ url, active: false }));
+        /**
+         * Two things this must not be, and it was both for a long time.
+         *
+         * `duringAction` is what marks the tab as the agent's — outside it the
+         * group guard ejects the very tab the run just opened and the follower
+         * declines to move to it.
+         *
+         * `createUserTab` is what puts it in a window the user can see. A bare
+         * `tabs.create` goes to the last focused window, which is the relay
+         * whenever the extension has just driven a provider — that is every turn
+         * of a windowed run. See the note on it in state/user-tabs.js: the tab is
+         * invisible, it counts as ours to `isRelayOwned` so the run is refused the
+         * page it just opened, and creating it restores the minimized relay onto
+         * the screen with the debugger bar across the top.
+         */
+        const tab = await duringAction(() =>
+          createUserTab(url, { active: false, nearTabId: currentTab })
+        );
+
+        if (!tab) {
+          return { failed: true, note: `Could not open a new tab for ${url}.` };
+        }
+
         await waitForLoad(tab.id);
         await settle(tab.id, 5000);
         onTabChange(tab.id);

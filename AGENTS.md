@@ -72,6 +72,8 @@ tests/
   agent/survey-turn.test.mjs  the plan and the first action in one round trip
   agent/not-a-task.test.mjs   "hyy" must not take over the browser
   agent/blind-transport.test.mjs  when a run may take the fast path with no camera
+  agent/new-tab-window.test.mjs   open_tab must not open into the relay window
+  agent/action-json.test.mjs      a markdown answer, from the reply to the HTML
   content/frame-guard.test.mjs  only the top frame answers a broadcast
   panel/*.html           self-checking browser fixtures — see the end of this file
 
@@ -220,6 +222,55 @@ headings, "- " bullets, bold for the thing being named, a table when the items
 share fields, one bullet per item and never one paragraph — because "use
 markdown" is not specific enough to change what a model writes. It also says
 newlines must be `\n`, since the answer travels inside a JSON string.
+
+**Asking for markdown was half the job; the other half is that a single newline
+had to survive the renderer, the JSON and the stylesheet.** All three ate it, and
+each failure looked like the model writing badly.
+
+*The renderer.* CommonMark says a single newline inside a paragraph is a SPACE,
+which is right for a document and wrong for a chat panel. Measured on a run
+comparing AI coding tools, where the model wrote a line per field:
+
+```
+Company: Anysphere
+Main purpose: AI-first code editor
+Key features: agent coding, tab autocomplete, MCP servers
+Pricing/free plan: Hobby is free; plans from $20/month
+```
+
+`flushParagraph` joined those with `' '` and produced one run-on paragraph — every
+fact present, every boundary between them gone, five items over. It is the same
+failure the table branch beside it was written for, one level down. It joins with
+`<br>` now, which is what GitHub, Slack and the providers' own UIs do, for the
+same reason: pressing return means pressing return. The join happens BEFORE
+`inline`, not after, so emphasis and a link spanning two lines still resolve —
+every pattern in `inline` excludes `\n` and none of them excludes the `<br>` that
+replaced it. Inserting our own tag after `escapeHtml` is safe for exactly the
+reason the table cells are: the text is already escaped, so this tag cannot be
+one of theirs.
+
+*The stylesheet.* `lib/markdown.js` offsets headings by two — `#` is h3, `##` is
+h4, `###` is h5 — and one rule in `thread.css` set h3 through h6 to 14.5px
+against 13px body text. So every level in an answer rendered identically: the
+model was asked for sections and items, produced them, and the panel drew them
+flat. They are three sizes now, and `##` carries a hairline rule above it,
+because in a 400px column a size difference of one pixel is not a difference.
+
+*The JSON.* See `repairStrings` below — that one loses the whole answer rather
+than flattening it.
+
+*The instruction.* The same run numbered every item "1.", because each one opened
+its own single-item ordered list with paragraphs between them. Told only to "give
+each item its own bullet", a model writes the item as a bullet and the fields as
+prose underneath, which is precisely what happened. The rule now names the shape:
+a `###` heading per item, one `- **Field** — value` bullet per fact, a blank line
+between every block, and lead with the finding rather than with a description of
+the run the user just watched. Sources are asked for as `[label](url)` for the
+same reason and in the same place: the renderer only linkifies that form, and
+autolinking a bare URL in `inline()` means a regex hunting for one in
+already-rendered HTML, which has to dodge the inside of a `<code>` span and the
+inside of an `href` it wrote a line earlier. Getting that wrong turns a
+provider's answer into markup, and the prompt costs nothing.
 
 **An agent run picks its transport ONCE, and the test is "can this engine carry
 a picture?"** A run is thirty round trips rather than one, so it is where the
@@ -1157,6 +1208,42 @@ prose becomes the answer — with a line saying nothing was clicked, because a
 run that only ever observed and then described the page reads exactly like one
 that did the work.
 
+**The markdown instruction created a JSON bug, and it cost whole runs at the
+finish line.** `finish` carries the answer in `"answer"`, the prompt asks for
+headings, bullets and a table — and a model writing a document does not write it
+as one line with `\n` between the paragraphs. It presses return. `JSON.parse`
+rejects a raw control character inside a string outright, so the one reply that
+finally had the answer in it came back as *"Could not read an action from that
+reply"*: `MAX_MISREADS`, run over, work discarded, with the finished answer
+sitting in a reply nobody could read. Measured on the exact shape the prompt asks
+for — a heading, a table and four bullets — `parseAction` returned no action at
+all. The note beside that instruction used to say `parseAction` "has to guess,
+which it can". It could not.
+
+`repairStrings` in `parseLoosely` is that guess, now that one exists. Raw
+newlines, tabs and other control characters inside a string are escaped, and so
+is the unescaped inner quote that comes with prose (`"answer":"it says "free
+tier" here"`) — a `"` closes the string only when the next non-space character is
+one that can legally follow one (`:` `,` `}` `]` or the end), and anything else
+means the model was still writing. The heuristic loses on `"see "https://x.com",
+it says"` and does not try to win it: that fails to parse, which is what happened
+before, so nothing is lost.
+
+Two things about the shape of `parseLoosely` are load-bearing. The attempts are
+ORDERED with the untouched text first, so a repair can only turn a failure into a
+success and never rewrites something that already parsed — that property is what
+makes it safe to keep adding to the list. And `repairStrings` is tried alone
+before `normaliseSyntax`, because the two disagree about curly quotes:
+straightening `“…”` is right when the model typed the object's own delimiters in
+prose and wrong when they are quotation marks inside the answer, and an answer
+asked for in markdown is full of them. Alone-first keeps them curly in the case
+that only needed the string repair; the combined attempt is the last resort,
+where recovering the answer with straight quotes beats losing the run.
+
+`tests/agent/action-json.test.mjs` drives the whole journey — the reply a
+provider sent, through `parseAction`, into the HTML `lib/markdown.js` produces —
+because "it parsed" is not what is being asked for.
+
 **One turn may carry several actions, and the first failure ends the batch.** A
 provider round trip is ten to forty seconds, so a strictly one-action loop spent
 one of those per form field — nearly all of it re-deciding what was already
@@ -1762,6 +1849,36 @@ and a tab appearing in the ten-to-forty-second wait between actions is yours.
 claimed is left *completely* alone: not followed, not curtained, not grouped —
 and `loop.js` says so in the timeline once, because a run that silently ignores
 a tab you are now looking at is indistinguishable from one that never noticed.
+
+**A new tab goes where the user can see it, and `tabs.create` will not do
+that on its own.** With no `windowId` it uses the LAST FOCUSED window, and
+the relay is `type: 'normal'` on purpose (a popup holds one tab and Chrome
+will not reliably place others in it) — so it is an ordinary window as far as
+that rule is concerned, and it is focused the instant a provider tab is
+created or navigated in it, which is every turn of a windowed run. `open_tab`
+therefore put the run's pages in among the provider tabs. Three failures at
+once: the user cannot see them; `isRelayOwned` is true of them, so the run is
+then refused the very page it just opened; and creating a tab in a MINIMIZED
+window RESTORES it, so the relay is dragged onto the screen with Chrome's
+"started debugging this browser" bar across the top. What that looks like is
+what it was reported as — *"the tabs are getting opened [in] the
+ChatGPT-opened Chrome, not the Chrome for the chatting window"* — a second
+browser the user did not open, running their task inside it.
+
+`createUserTab` in `state/user-tabs.js` is the one road now. There were three
+copies of this decision and only the agent's start page got it right, which is
+the shape of bug a shared helper exists to prevent: the panel's "open this
+conversation" — a tab whose entire purpose is to be READ — had it wrong too.
+It prefers the window of the tab the new one belongs beside (`nearTabId`), then
+a focused window of theirs, then any non-minimized one, because popping open
+the user's own minimized window is the same rudeness one size smaller. The
+move-it-back branch is belt and braces for Chrome placing a tab somewhere
+other than the window it was asked for, which `relay.js` has guarded against
+in the other direction for as long as it has existed.
+
+`tests/agent/new-tab-window.test.mjs` models Chrome's actual rule, so a bare
+`tabs.create` really does land in the relay there — asserted first, because a
+fake that cannot reproduce the bug proves nothing about the fix.
 
 **Chrome puts a new tab in the group the active tab is in, and during a run that
 is one of ours.** Nothing in the extension did this and the extension got the

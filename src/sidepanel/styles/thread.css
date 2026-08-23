@@ -37,7 +37,26 @@
 .msg.assistant .body > :last-child { margin-bottom: 0; }
 
 .body p { margin: 0 0 10px; }
-.body h3, .body h4, .body h5, .body h6 { font-size: 14.5px; margin: 14px 0 6px; }
+/* Three heading levels that look like three heading levels.
+
+   `lib/markdown.js` offsets by two, so `#` is h3, `##` is h4 and `###` is h5 —
+   and one rule set all four to 14.5px against 13px body text. Every level in
+   an answer therefore rendered identically, which is most of why a long one
+   read as a wall: the model was asked for sections and items, produced them,
+   and the panel drew them flat. The rule above them (`##`) is doing the work a
+   size difference cannot do in a 400px column, where 15px and 13.5px are half
+   a pixel apart at a glance. */
+.body h3 { font-size: 16.5px; font-weight: 650; margin: 18px 0 8px; }
+.body h4 {
+  font-size: 14.5px;
+  font-weight: 650;
+  margin: 20px 0 8px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+/* The first section needs no rule: there is nothing above it to divide from. */
+.body > h4:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.body h5, .body h6 { font-size: 13.5px; font-weight: 650; margin: 15px 0 5px; }
 .body ul, .body ol { margin: 0 0 10px; padding-left: 22px; }
 .body li { margin: 4px 0; }
 .body blockquote {

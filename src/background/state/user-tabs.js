@@ -206,3 +206,79 @@ export async function listShareableTabs() {
       active: tab.active
     }));
 }
+
+/**
+ * A window of the user's own to put a new tab in.
+ *
+ * `chrome.tabs.create` with no `windowId` uses the *last focused* window, and
+ * for most of every run that is the relay window — it is a `type: 'normal'`
+ * window (deliberately, see relay.js) and it is restored and focused the moment
+ * a provider tab is created or navigated in it. So a tab meant for the user
+ * lands among the provider tabs instead, which fails twice over: it is not
+ * where they are looking, and `isRelayOwned` is then true of it, so the run is
+ * refused the very page it just opened.
+ *
+ * The visible half is worse. Creating a tab in a minimized window RESTORES that
+ * window, so the relay — which exists to stay out of the way — is dragged onto
+ * the screen with Chrome's "started debugging this browser" bar across the top
+ * of it, and the user watches their task happen inside what looks like a second
+ * browser they did not open. Reported as exactly that: *"the tabs are getting
+ * opened [in] the ChatGPT-opened Chrome, not the Chrome for the chatting
+ * window."*
+ *
+ * `preferTabId` is the tab the new one belongs beside — the page whose link is
+ * being followed. Answering from that rather than from "any window of theirs"
+ * is what puts the tab next to its own page when the user has two windows open.
+ */
+export async function userWindowId(preferTabId = null) {
+  await whenRelayReady();
+
+  if (preferTabId != null) {
+    const tab = await chrome.tabs.get(preferTabId).catch(() => null);
+    if (tab && !isRelayWindow(tab.windowId)) return tab.windowId;
+  }
+
+  const windows = await chrome.windows.getAll({ windowTypes: ['normal'] }).catch(() => []);
+  const mine = windows.filter((win) => !isRelayWindow(win.id));
+
+  // Focused first, then anything not minimized: a tab created in a minimized
+  // window pops it open, and doing that to the user's own window is the same
+  // rudeness as doing it to ours, one step smaller.
+  return (
+    mine.find((win) => win.focused) ||
+    mine.find((win) => win.state !== 'minimized') ||
+    mine[0]
+  )?.id ?? null;
+}
+
+/**
+ * Open a tab where the user can see it. The one road for every new tab.
+ *
+ * There were three copies of this decision and only one of them made it — the
+ * agent's start page picked a user window, while `open_tab` and the panel's
+ * "open this conversation" did not. One function, so the next caller cannot get
+ * it wrong by omission.
+ *
+ * `active` focuses the window as well as the tab, because a tab the user is
+ * meant to read is no use activated inside a window behind theirs.
+ */
+export async function createUserTab(url, { active = false, nearTabId = null } = {}) {
+  const windowId = await userWindowId(nearTabId);
+
+  if (windowId != null) {
+    const tab = await chrome.tabs.create({ windowId, url, active }).catch(() => null);
+    if (tab) {
+      // Chrome has been known to place a tab somewhere other than the window it
+      // was asked for. Drag it back rather than leave it loose in the relay.
+      if (isRelayWindow(tab.windowId)) {
+        await chrome.tabs.move(tab.id, { windowId, index: -1 }).catch(() => {});
+      }
+      if (active) await chrome.windows.update(windowId, { focused: true }).catch(() => {});
+      return tab;
+    }
+  }
+
+  // Every normal window was ours, so there is nowhere to put it but a new one.
+  const win = await chrome.windows.create({ url, focused: active }).catch(() => null);
+  return win?.tabs?.[0] || null;
+}

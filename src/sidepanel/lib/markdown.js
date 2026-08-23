@@ -128,9 +128,38 @@ export function renderMarkdown(src) {
   let listType = null;
   let paragraph = [];
 
+  /**
+   * A newline the writer typed is a newline the reader gets.
+   *
+   * CommonMark says a single newline inside a paragraph is a SPACE, and that
+   * is right for a document. It is wrong here, and the measured failure is the
+   * shape these answers actually arrive in: a model asked to list five tools
+   * writes a line per field —
+   *
+   *   Company: Anysphere
+   *   Main purpose: AI-first code editor
+   *   Key features: agent coding, tab autocomplete, MCP servers
+   *   Pricing: Hobby is free; individual plans from $20/month
+   *
+   * — and joining those with a space produced exactly one run-on paragraph:
+   * "Company: Anysphere Main purpose: AI-first code editor Key features: …".
+   * Every fact present, every boundary between them gone, five times over. It
+   * is the same failure the table branch below was written for, one level down.
+   *
+   * Every chat surface people compare this one to — GitHub comments, Slack,
+   * the providers’ own UIs — breaks on a single newline for the same reason.
+   * Pressing return means pressing return.
+   *
+   * The join happens BEFORE `inline`, not after, so emphasis and a link that
+   * span two lines still resolve: every pattern in `inline` excludes `
+` but
+   * none of them excludes the `<br>` that replaced it. Inserting our own
+   * markup after `escapeHtml` is safe for the same reason the table cells are:
+   * the text is already escaped, so this tag cannot be one of theirs.
+   */
   const flushParagraph = () => {
     if (!paragraph.length) return;
-    out.push(`<p>${inline(paragraph.join(' '))}</p>`);
+    out.push(`<p>${inline(paragraph.join('<br>'))}</p>`);
     paragraph = [];
   };
 

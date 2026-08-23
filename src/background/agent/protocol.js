@@ -389,18 +389,72 @@ export function systemPrompt(task) {
      * all there and none of it was findable.
      *
      * A list of items is the shape these tasks actually produce, so it is named
-     * outright rather than left to "use markdown". The escaping is worth saying
-     * too: the answer travels as a JSON string, so a literal newline breaks the
-     * block and `parseAction` has to guess — which it can, but a truncated guess
-     * costs a round trip.
+     * outright rather than left to "use markdown".
+     *
+     * The escaping line is not decoration, and it used to claim too much: the
+     * answer travels inside a JSON string, and a model writing a document with
+     * headings and a table presses return rather than typing 
+. `JSON.parse`
+     * refuses a raw newline inside a string, so the one reply that finally had
+     * the answer in it was reported as "Could not read an action" — the whole run
+     * discarded a step from the finish line. `repairStrings` in `parseLoosely`
+     * recovers it now; asking is still worth doing, because a repair is a guess
+     * and the model getting it right is not.
      */
-    '- Write the answer as MARKDOWN. It is rendered, so use it: "## " headings',
-    '  when there is more than one part, "- " bullets for a list, "**bold**" for',
-    '  the thing being named, a table when the items share fields. When the task',
-    '  produced a set of items — messages, jobs, prices, results — give each one',
-    '  its own bullet or row with its name in bold, never one paragraph with',
-    '  "1)" and "2)" inside it. Keep it tight: the summary the user asked for,',
-    '  not a transcript of the run.',
+    '- Write the answer as MARKDOWN. It is rendered, so use it: "## " for the',
+    '  sections, "- " for a list, "**bold**" for the thing being named, and a',
+    '  table when every item has the same few fields and they are short.',
+    /**
+     * The shape, spelled out, because "use markdown" produced this:
+     *
+     *   1. Product: Cursor
+     *
+     *   Company: Anysphere Main purpose: AI-first code editor for writing,
+     *   editing and delegating… Key features: Agent-based coding, Tab
+     *   autocomplete… Pricing/free plan: Hobby is free… Source URL: …
+     *
+     *   1. Product: Claude Code
+     *
+     * Two failures in one screenshot. Each item opened its own one-line ordered
+     * list, so every heading in the answer was numbered "1." — a list of five
+     * that reads as five lists of one. And the fields under it were written as
+     * `Label: value` lines, which the renderer used to fold into a single
+     * paragraph: every fact present, every boundary between them gone. The
+     * renderer breaks on a newline now, but a wall of six labelled lines under a
+     * bare "1." is still the wrong shape for a 400px panel — the fix for that is
+     * asking for the right one.
+     *
+     * A heading per item and a bullet per field is the shape, and it is worth
+     * naming both the thing to do and the thing not to: told only to "give each
+     * item its own bullet", a model writes the item as a bullet and the fields
+     * as prose underneath, which is what happened here.
+     */
+    '- When the task produced a SET of items — products, messages, jobs, prices,',
+    '  search results — give each item a "### " heading with its name, then one',
+    '  "- " bullet per fact, with the field in bold: "- **Pricing** — free tier,',
+    '  then $20/month". Never write the fields as "Label: value" lines run',
+    '  together, and never number the items by hand.',
+    '- Put a blank line between every block — after a heading, between bullets',
+    '  and the paragraph under them, around a table. Two lines with no blank',
+    '  line between them are one line to the reader.',
+    '- Lead with the answer, not with what you did. "I found and verified',
+    '  multiple X using independent sources" is a description of the run; the',
+    '  user watched the run. Open with the finding, and put anything you could',
+    '  not do at the end under "## Not done".',
+    /**
+     * A source is only a source if it can be followed.
+     *
+     * The renderer only linkifies `[label](url)` — a bare `https://…` is drawn
+     * as text, and in a 400px panel a long one wraps across three lines and
+     * cannot be clicked. Asked for as markdown here rather than autolinked in
+     * `inline()`, because a regex hunting URLs in already-rendered HTML has to
+     * avoid the inside of a `<code>` span and the inside of an `href` it just
+     * wrote, and getting that wrong turns a provider's answer into markup.
+     */
+    '- Keep every URL you used — it is the half of the answer the user can',
+    '  check — and write each one as a markdown link with a short label:',
+    '  "[cursor.com/pricing](https://cursor.com/pricing)". A bare URL is not',
+    '  clickable and wraps across three lines in a narrow panel.',
     '- Newlines inside "answer" must be written \\n, because the block is JSON.',
     `- Stop by step ${MAX_STEPS}; after that the run is cut off.`,
     '',
@@ -587,15 +641,44 @@ export function parseAction(reply) {
   };
 }
 
-/** JSON, then JSON with the mistakes models actually make repaired. */
+/**
+ * JSON, then JSON with the mistakes models actually make repaired.
+ *
+ * The attempts are tried in order and the FIRST one is the untouched text, so a
+ * repair can only ever turn a failure into a success — it never gets to rewrite
+ * something that already parsed. That property is what makes it safe to keep
+ * adding to this list.
+ *
+ * `repairStrings` is tried on its own before `normaliseSyntax` because the two
+ * disagree about curly quotes. Straightening “…” is right when the model typed
+ * the object's own delimiters in prose and wrong when they are quotation marks
+ * inside the answer — and the answer is now asked for in markdown, so it is full
+ * of them. Trying the string repair alone first keeps them curly in the case
+ * that only needed that; the combined attempt at the end is the last resort,
+ * where recovering the answer with straight quotes beats losing the run.
+ */
 function parseLoosely(raw) {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    /* fall through to the repair */
+  const attempts = [
+    (text) => text,
+    repairStrings,
+    normaliseSyntax,
+    (text) => repairStrings(normaliseSyntax(text))
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      return JSON.parse(attempt(raw));
+    } catch {
+      /* try the next repair */
+    }
   }
 
-  const repaired = quoteBareKeys(
+  return null;
+}
+
+/** The punctuation-level repairs: quotes, a trailing comma, a stray label. */
+function normaliseSyntax(raw) {
+  return quoteBareKeys(
     raw
       // Smart quotes: a chat UI leaves code blocks alone, but a model writing the
       // object inline in prose picks them up from the prose around it.
@@ -605,13 +688,81 @@ function parseLoosely(raw) {
       .replace(/^\s*json\b/i, '')
       .trim()
   );
-
-  try {
-    return JSON.parse(repaired);
-  } catch {
-    return null;
-  }
 }
+
+/**
+ * A markdown answer, written into a JSON string the way people write markdown.
+ *
+ * This is the failure the markdown instruction CREATED. `finish` carries the
+ * whole answer in `"answer"`, the prompt asks for "## " headings, "- " bullets
+ * and a table where the items share fields — and a model writing a document does
+ * not write it as one line with \n between the paragraphs. It presses return.
+ * `JSON.parse` rejects a raw control character inside a string outright, so the
+ * one reply that finally had the answer in it came back as "Could not read an
+ * action": the run ends on a misread and the work is thrown away one step from
+ * the finish line, with the finished answer sitting in the reply nobody could
+ * read.
+ *
+ * Measured before this existed, on the exact shape the prompt asks for — a
+ * heading, a table and four bullets — `parseAction` returned no action at all.
+ * The note beside that instruction used to say `parseAction` "has to guess,
+ * which it can". It could not. Now it can.
+ *
+ * The unescaped inner quote is the same family and just as common in prose: a
+ * model writes `"answer":"it says "free tier" here"` and every layer above
+ * reports a reply with no action in it. A `"` is read as CLOSING the string only
+ * when the next non-space character is one that can legally follow one — `:`
+ * `,` `}` `]` or the end of the text. Anything else means the model was still
+ * writing, so it is escaped instead.
+ *
+ * There is a case that heuristic cannot win — `"see "https://x.com", it says"`,
+ * where the inner quote IS followed by a comma — and it does not try to. That
+ * fails to parse, which is exactly what happens today, so nothing is lost.
+ */
+function repairStrings(raw) {
+  let out = '';
+  let inString = false;
+
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+
+    if (!inString) {
+      if (ch === '"') inString = true;
+      out += ch;
+      continue;
+    }
+
+    // An escape carries its next character through untouched, or `\"` ends the
+    // string in the wrong place and everything after it is scanned as structure.
+    if (ch === '\\') {
+      out += ch + (raw[i + 1] ?? '');
+      i += 1;
+      continue;
+    }
+
+    if (ch === '"') {
+      const next = raw.slice(i + 1).replace(/^\s+/, '')[0];
+      if (next === undefined || CLOSES_A_STRING.has(next)) {
+        inString = false;
+        out += ch;
+      } else {
+        out += '\\"';
+      }
+      continue;
+    }
+
+    if (ch === '\n') out += '\\n';
+    else if (ch === '\r') out += '\\r';
+    else if (ch === '\t') out += '\\t';
+    else if (ch < ' ') out += `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`;
+    else out += ch;
+  }
+
+  return out;
+}
+
+/** What may legally follow a closing quote. Anything else, and it was not one. */
+const CLOSES_A_STRING = new Set([':', ',', '}', ']']);
 
 /**
  * `{"x":212,y:338}` — one key that lost its quotes, and the whole turn with it.

@@ -1,6 +1,10 @@
 import { PROVIDER_ORDER } from '../../providers/config.js';
-import { resolveUserTab, focusedUserTab, isOrdinaryUrl } from '../state/user-tabs.js';
-import { isRelayWindow, whenRelayReady } from '../relay.js';
+import {
+  resolveUserTab,
+  focusedUserTab,
+  isOrdinaryUrl,
+  createUserTab
+} from '../state/user-tabs.js';
 import { askProvider, warmProvider } from '../transport/ask-provider.js';
 import { directRunnable, directTextRunnable } from '../transport/direct/index.js';
 import { holdKeepAlive, releaseKeepAlive } from '../transport/inflight.js';
@@ -783,32 +787,14 @@ const describeTab = (tab) => ({
 });
 
 /**
- * Put the new tab in one of the user's own windows.
+ * Put the start page in one of the user's own windows.
  *
- * `chrome.tabs.create` with no `windowId` uses the last focused window, which is
- * the hidden relay window whenever the extension has just been driving a
- * provider. A tab in there is invisible to the user *and* counts as ours to
- * `isRelayOwned`, so the agent would go on to refuse the very page it created.
+ * The rule itself lives in `createUserTab` now, because `open_tab` needed it
+ * just as much and did not have it — the whole reasoning is written down there.
+ * In short: a bare `tabs.create` goes to the last focused window, which is the
+ * relay whenever the extension has just been driving a provider.
  */
-async function openStartTab() {
-  await whenRelayReady();
-
-  const windows = await chrome.windows.getAll({ windowTypes: ['normal'] }).catch(() => []);
-  const mine = windows.filter((win) => !isRelayWindow(win.id));
-  const target = mine.find((win) => win.focused) || mine[0];
-
-  if (target) {
-    return chrome.tabs
-      .create({ windowId: target.id, url: AGENT_START_URL, active: false })
-      .catch(() => null);
-  }
-
-  // Every normal window was ours, so there is nowhere to put it but a new one.
-  const win = await chrome.windows
-    .create({ url: AGENT_START_URL, focused: false })
-    .catch(() => null);
-  return win?.tabs?.[0] || null;
-}
+const openStartTab = () => createUserTab(AGENT_START_URL, { active: false });
 
 /**
  * Pages the agent physically cannot read, named plainly.
